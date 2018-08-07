@@ -1133,16 +1133,19 @@ Status DBImpl::GetImpl(const ReadOptions& read_options,
   bool skip_memtable = (read_options.read_tier == kPersistedTier &&
                         has_unpersisted_data_.load(std::memory_order_relaxed));
   bool done = false;
+
+  //temp dirty control
+  bool is_dirty_read = true;
   if (!skip_memtable) {
     if (sv->mem->Get(lkey, pinnable_val->GetSelf(), &s, &merge_context,
-                     &range_del_agg, read_options, callback, is_blob_index)) {
+                     &range_del_agg, read_options, callback, is_blob_index, &is_dirty_read)) {
       done = true;
       pinnable_val->PinSelf();
       RecordTick(stats_, MEMTABLE_HIT);
     } else if ((s.ok() || s.IsMergeInProgress()) &&
                sv->imm->Get(lkey, pinnable_val->GetSelf(), &s, &merge_context,
                             &range_del_agg, read_options, callback,
-                            is_blob_index)) {
+                            is_blob_index, &is_dirty_read)) {
       done = true;
       pinnable_val->PinSelf();
       RecordTick(stats_, MEMTABLE_HIT);

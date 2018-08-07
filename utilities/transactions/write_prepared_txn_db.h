@@ -118,7 +118,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
   // is visible to the snapshot with sequence number snapshot_seq.
   // Returns true if commit_seq <= snapshot_seq
   inline bool IsInSnapshot(uint64_t prep_seq, uint64_t snapshot_seq,
-                           uint64_t min_uncommitted = 0) const {
+                           uint64_t min_uncommitted = 0, bool support_dirty = false) const {
     ROCKS_LOG_DETAILS(info_log_,
                       "IsInSnapshot %" PRIu64 " in %" PRIu64
                       " min_uncommitted %" PRIu64,
@@ -154,7 +154,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
                           "IsInSnapshot %" PRIu64 " in %" PRIu64
                           " returns %" PRId32,
                           prep_seq, snapshot_seq, 0);
-        return false;
+        return support_dirty;
       }
     }
     // Note: since min_uncommitted does not include the delayed_prepared_ we
@@ -191,7 +191,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
       ROCKS_LOG_DETAILS(
           info_log_, "IsInSnapshot %" PRIu64 " in %" PRIu64 " returns %" PRId32,
           prep_seq, snapshot_seq, 0);
-      return false;
+      return support_dirty;
     }
     // When advancing max_evicted_seq_, we move older entires from prepared to
     // delayed_prepared_. Also we move evicted entries from commit cache to
@@ -617,7 +617,11 @@ class WritePreparedTxnReadCallback : public ReadCallback {
   // Will be called to see if the seq number visible; if not it moves on to
   // the next seq number.
   inline virtual bool IsVisible(SequenceNumber seq) override {
-    return db_->IsInSnapshot(seq, snapshot_, min_uncommitted_);
+    return db_->IsInSnapshot(seq, snapshot_, min_uncommitted_, false);
+  }
+
+  inline virtual bool IsVisibleForDirty(SequenceNumber seq) override {
+    return db_->IsInSnapshot(seq, snapshot_, min_uncommitted_, true);
   }
 
  private:

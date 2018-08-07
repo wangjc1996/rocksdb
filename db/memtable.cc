@@ -577,10 +577,19 @@ struct Saver {
   Env* env_;
   ReadCallback* callback_;
   bool* is_blob_index;
+  bool* is_dirty_read;
 
-  bool CheckCallback(SequenceNumber _seq) {
+  bool CheckCallback(SequenceNumber _seq, bool* find_dirty_value) {
     if (callback_) {
-      return callback_->IsVisible(_seq);
+      if (is_dirty_read != nullptr && *is_dirty_read) {
+        bool dirty_visible = callback_->IsVisibleForDirty(_seq);
+        bool clean_visible = callback_->IsVisible(_seq);
+        if(dirty_visible && !clean_visible)
+          *(find_dirty_value) = true;
+        return dirty_visible;
+      } else {
+        return callback_->IsVisible(_seq);
+      }
     }
     return true;
   }
@@ -615,7 +624,8 @@ static bool SaveValue(void* arg, const char* entry) {
     SequenceNumber seq;
     UnPackSequenceAndType(tag, &seq, &type);
     // If the value is not in the snapshot, skip it
-    if (!s->CheckCallback(seq)) {
+    bool find_dirty_value = false;
+    if (!s->CheckCallback(seq, &find_dirty_value)) {
       return true;  // to continue to the next seq
     }
 
@@ -646,7 +656,11 @@ static bool SaveValue(void* arg, const char* entry) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
         }
         Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
-        *(s->status) = Status::OK();
+        if (find_dirty_value) {
+          *(s->status) = Status::DirtyRead();
+        } else {
+          *(s->status) = Status::OK();
+        }
         if (*(s->merge_in_progress)) {
           if (s->value != nullptr) {
             *(s->status) = MergeHelper::TimedFullMerge(
@@ -721,7 +735,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s,
                    MergeContext* merge_context,
                    RangeDelAggregator* range_del_agg, SequenceNumber* seq,
                    const ReadOptions& read_opts, ReadCallback* callback,
-                   bool* is_blob_index) {
+                   bool* is_blob_index, bool* is_dirty_read) {
   // The sequence number is updated synchronously in version_set.h
   if (IsEmpty()) {
     // Avoiding recording stats for speed.
@@ -769,6 +783,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s,
     saver.env_ = env_;
     saver.callback_ = callback;
     saver.is_blob_index = is_blob_index;
+    saver.is_dirty_read = is_dirty_read;
     table_->Get(key, &saver, SaveValue);
 
     *seq = saver.seq;

@@ -63,7 +63,13 @@ class WritePreparedTxn : public PessimisticTransaction {
 
   virtual void SetSnapshot() override;
 
- protected:
+  // Get list of keys in this transaction that used for dirty-read
+  const TransactionKeyMap& GetTrackedDirtyKeys() const { return tracked_dirty_keys_; }
+
+  void TrackDirtyKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
+                     bool readonly, bool exclusive);
+
+protected:
   void Initialize(const TransactionOptions& txn_options) override;
   // Override the protected SetId to make it visible to the friend class
   // WritePreparedTxnDB
@@ -104,6 +110,11 @@ class WritePreparedTxn : public PessimisticTransaction {
   WritePreparedTxnDB* wpt_db_;
   // Number of sub-batches in prepare
   size_t prepare_batch_cnt_ = 0;
+
+  // Map from column_family_id to map of dirty-read keys that are involved in this
+  // transaction.
+  // Only used in WritePreparedTxn or WriteUnpreparedTxn
+  TransactionKeyMap tracked_dirty_keys_;
 };
 
 }  // namespace rocksdb

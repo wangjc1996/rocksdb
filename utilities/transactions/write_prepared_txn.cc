@@ -53,8 +53,18 @@ Status WritePreparedTxn::Get(const ReadOptions& read_options,
   }
 
   WritePreparedTxnReadCallback callback(wpt_db_, snap_seq, min_uncommitted);
-  return write_batch_.GetFromBatchAndDB(db_, read_options, column_family, key,
-                                        pinnable_val, &callback);
+
+  Status s = write_batch_.GetFromBatchAndDB(db_, read_options, column_family, key,
+                                            pinnable_val, &callback);
+  if (s.IsDirtyRead()) {
+    uint32_t cfh_id = GetColumnFamilyID(column_family);
+    std::string key_str = key.ToString();
+    //Track the dirty reads for later validation
+    // TODO VALIDATION
+    TrackDirtyKey(cfh_id, key_str, snap_seq, true, false);
+    s = Status::OK();
+  }
+  return s;
 }
 
 Iterator* WritePreparedTxn::GetIterator(const ReadOptions& options) {
@@ -435,6 +445,15 @@ Status WritePreparedTxn::RebuildFromWriteBatch(WriteBatch* src_batch) {
   auto ret = PessimisticTransaction::RebuildFromWriteBatch(src_batch);
   prepare_batch_cnt_ = GetWriteBatch()->SubBatchCnt();
   return ret;
+}
+
+void WritePreparedTxn::TrackDirtyKey(uint32_t cfh_id, const std::string& key,
+                                       SequenceNumber seq, bool read_only,
+                                       bool exclusive) {
+  // Update map of all tracked keys for this transaction
+  TrackKey(&tracked_dirty_keys_, cfh_id, key, seq, read_only, exclusive);
+
+  // Do not consider savepoint
 }
 
 }  // namespace rocksdb
