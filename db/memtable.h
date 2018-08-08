@@ -35,6 +35,7 @@ class Mutex;
 class MemTableIterator;
 class MergeContext;
 class InternalIterator;
+struct DirtyReadContext;
 
 struct ImmutableMemTableOptions {
   explicit ImmutableMemTableOptions(const ImmutableCFOptions& ioptions,
@@ -191,15 +192,15 @@ class MemTable {
            MergeContext* merge_context, RangeDelAggregator* range_del_agg,
            SequenceNumber* seq, const ReadOptions& read_opts,
            ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
-           bool* is_dirty_read = nullptr);
+           DirtyReadContext* dirty_context = nullptr);
 
   bool Get(const LookupKey& key, std::string* value, Status* s,
            MergeContext* merge_context, RangeDelAggregator* range_del_agg,
            const ReadOptions& read_opts, ReadCallback* callback = nullptr,
-           bool* is_blob_index = nullptr, bool* is_dirty_read = nullptr) {
+           bool* is_blob_index = nullptr, DirtyReadContext* dirty_context = nullptr) {
     SequenceNumber seq;
     return Get(key, value, s, merge_context, range_del_agg, &seq, read_opts,
-               callback, is_blob_index, is_dirty_read);
+               callback, is_blob_index, dirty_context);
   }
 
   // Attempts to update the new_value inplace, else does normal Add

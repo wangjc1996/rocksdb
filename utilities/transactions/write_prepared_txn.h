@@ -33,6 +33,11 @@
 namespace rocksdb {
 
 class WritePreparedTxnDB;
+struct DirtyReadContext {
+  bool *is_dirty_read;
+  bool *found_dirty;
+  SequenceNumber seq;
+};
 
 // This impl could write to DB also uncommitted data and then later tell apart
 // committed data from uncommitted data. Uncommitted data could be after the

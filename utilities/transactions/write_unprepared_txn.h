@@ -16,6 +16,7 @@ namespace rocksdb {
 
 class WriteUnpreparedTxnDB;
 class WriteUnpreparedTxn;
+struct DirtyReadContext;
 
 class WriteUnpreparedTxnReadCallback : public ReadCallback {
  public:

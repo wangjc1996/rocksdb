@@ -31,6 +31,7 @@ class ColumnFamilyData;
 class InternalKeyComparator;
 class InstrumentedMutex;
 class MergeIteratorBuilder;
+struct DirtyReadContext;
 
 // keeps a list of immutable memtables in a vector. the list is immutable
 // if refcount is bigger than one. It is used as a state for Get() and
@@ -58,15 +59,15 @@ class MemTableListVersion {
            MergeContext* merge_context, RangeDelAggregator* range_del_agg,
            SequenceNumber* seq, const ReadOptions& read_opts,
            ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
-           bool* is_dirty_read = nullptr);
+           DirtyReadContext* dirty_context = nullptr);
 
   bool Get(const LookupKey& key, std::string* value, Status* s,
            MergeContext* merge_context, RangeDelAggregator* range_del_agg,
            const ReadOptions& read_opts, ReadCallback* callback = nullptr,
-           bool* is_blob_index = nullptr, bool* is_dirty_read = nullptr) {
+           bool* is_blob_index = nullptr, DirtyReadContext* dirty_context = nullptr) {
     SequenceNumber seq;
     return Get(key, value, s, merge_context, range_del_agg, &seq, read_opts,
-               callback, is_blob_index, is_dirty_read);
+               callback, is_blob_index, dirty_context);
   }
 
   // Similar to Get(), but searches the Memtable history of memtables that
@@ -128,7 +129,7 @@ class MemTableListVersion {
                    const ReadOptions& read_opts,
                    ReadCallback* callback = nullptr,
                    bool* is_blob_index = nullptr,
-                   bool* is_dirty_read = nullptr);
+                   DirtyReadContext* dirty_context = nullptr);
 
   void AddMemTable(MemTable* m);
 

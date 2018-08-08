@@ -511,9 +511,16 @@ Status WriteUnpreparedTxn::Get(const ReadOptions& options,
   WriteUnpreparedTxnReadCallback callback(wupt_db_, snap_seq, min_uncommitted,
                                           this);
 
+  DirtyReadContext context;
+  bool is_dirty_read = true;
+  bool found_dirty = true;
+  context.is_dirty_read = &is_dirty_read;
+  context.found_dirty = &found_dirty;
+  context.seq = 0;
+
   Status s = write_batch_.GetFromBatchAndDB(db_, options, column_family, key, value,
-                                            &callback);
-  if (s.IsDirtyRead()) {
+                                            &callback, &context);
+  if (is_dirty_read && found_dirty) {
     uint32_t cfh_id = GetColumnFamilyID(column_family);
     std::string key_str = key.ToString();
     //Track the dirty reads for later validation

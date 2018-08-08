@@ -59,8 +59,7 @@ class Status {
     kBusy = 11,
     kExpired = 12,
     kTryAgain = 13,
-    kCompactionTooLarge = 14,
-    kDirtyRead = 15
+    kCompactionTooLarge = 14
   };
 
   Code code() const { return code_; }
@@ -200,11 +199,6 @@ class Status {
     return Status(kIOError, kSpaceLimit, msg, msg2);
   }
 
-  static Status DirtyRead() { return Status(kDirtyRead); }
-  static Status DirtyRead(const Slice& msg, const Slice& msg2 = Slice()) {
-    return Status(kDirtyRead, msg, msg2);
-  }
-
   // Returns true iff the status indicates success.
   bool ok() const { return code() == kOk; }
 
@@ -264,10 +258,6 @@ class Status {
   // if needed
   bool IsNoSpace() const {
     return (code() == kIOError) && (subcode() == kNoSpace);
-  }
-
-  bool IsDirtyRead() const {
-    return code() == kDirtyRead;
   }
 
   // Returns true iff the status indicates a memory limit error.  There may be
