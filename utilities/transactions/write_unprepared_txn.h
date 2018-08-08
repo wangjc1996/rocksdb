@@ -29,6 +29,7 @@ class WriteUnpreparedTxnReadCallback : public ReadCallback {
         txn_(txn) {}
 
   virtual bool IsVisible(SequenceNumber seq) override;
+  virtual bool IsVisibleForDirty(SequenceNumber seq) override;
   virtual SequenceNumber MaxUnpreparedSequenceNumber() override;
 
  private:
