@@ -279,6 +279,7 @@ Status WriteUnpreparedTxn::CommitWithoutPrepareInternal() {
 }
 
 Status WriteUnpreparedTxn::CommitInternal() {
+  WritePreparedTransactionCallback callback(this);
   // TODO(lth): Reduce duplicate code with WritePrepared commit logic.
 
   // We take the commit-time batch and append the Commit marker.  The Memtable
@@ -321,7 +322,7 @@ Status WriteUnpreparedTxn::CommitInternal() {
   // redundantly reference the log that contains the prepared data.
   const uint64_t zero_log_number = 0ull;
   size_t batch_cnt = UNLIKELY(commit_batch_cnt) ? commit_batch_cnt : 1;
-  auto s = db_impl_->WriteImpl(write_options_, working_batch, nullptr, nullptr,
+  auto s = db_impl_->WriteImpl(write_options_, working_batch, &callback, nullptr,
                                zero_log_number, disable_memtable, &seq_used,
                                batch_cnt, &update_commit_map);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
@@ -363,7 +364,7 @@ Status WriteUnpreparedTxn::CommitInternal() {
   const bool DISABLE_MEMTABLE = true;
   const size_t ONE_BATCH = 1;
   const uint64_t NO_REF_LOG = 0;
-  s = db_impl_->WriteImpl(write_options_, &empty_batch, nullptr, nullptr,
+  s = db_impl_->WriteImpl(write_options_, &empty_batch, &callback, nullptr,
                           NO_REF_LOG, DISABLE_MEMTABLE, &seq_used, ONE_BATCH,
                           &publish_seq_callback);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
@@ -516,17 +517,15 @@ Status WriteUnpreparedTxn::Get(const ReadOptions& options,
   bool found_dirty = true;
   context.is_dirty_read = &is_dirty_read;
   context.found_dirty = &found_dirty;
-  context.seq = 0;
+  context.prep_seq = 0;
 
   Status s = write_batch_.GetFromBatchAndDB(db_, options, column_family, key, value,
                                             &callback, &context);
-  if (is_dirty_read && found_dirty) {
+  if (s.ok() && is_dirty_read && found_dirty) {
     uint32_t cfh_id = GetColumnFamilyID(column_family);
     std::string key_str = key.ToString();
     //Track the dirty reads for later validation
-    // TODO VALIDATION
-    TrackDirtyKey(cfh_id, key_str, snap_seq, true, false);
-    s = Status::OK();
+    TrackDirtyKey(cfh_id, key_str, snap_seq, context.prep_seq, true, false);
   }
   return s;
 }

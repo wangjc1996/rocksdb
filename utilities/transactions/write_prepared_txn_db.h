@@ -88,7 +88,7 @@ class WritePreparedTxnDB : public PessimisticTransactionDB {
   // Write the batch to the underlying DB and mark it as committed. Could be
   // used by both directly from TxnDB or through a transaction.
   Status WriteInternal(const WriteOptions& write_options, WriteBatch* batch,
-                       size_t batch_cnt, WritePreparedTxn* txn);
+                       size_t batch_cnt, WritePreparedTxn* txn, WriteCallback* callback = nullptr);
 
   using DB::Get;
   virtual Status Get(const ReadOptions& options,

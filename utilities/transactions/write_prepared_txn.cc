@@ -59,17 +59,15 @@ Status WritePreparedTxn::Get(const ReadOptions& read_options,
   bool found_dirty = true;
   context.is_dirty_read = &is_dirty_read;
   context.found_dirty = &found_dirty;
-  context.seq = 0;
+  context.prep_seq = 0;
 
   Status s = write_batch_.GetFromBatchAndDB(db_, read_options, column_family, key,
                                             pinnable_val, &callback, &context);
-  if (is_dirty_read && found_dirty) {
+  if (s.ok() && is_dirty_read && found_dirty) {
     uint32_t cfh_id = GetColumnFamilyID(column_family);
     std::string key_str = key.ToString();
     //Track the dirty reads for later validation
-    // TODO VALIDATION
-    TrackDirtyKey(cfh_id, key_str, snap_seq, true, false);
-    s = Status::OK();
+    TrackDirtyKey(cfh_id, key_str, snap_seq, context.prep_seq, true, false);
   }
   return s;
 }
@@ -128,10 +126,12 @@ Status WritePreparedTxn::CommitWithoutPrepareInternal() {
 
 Status WritePreparedTxn::CommitBatchInternal(WriteBatch* batch,
                                              size_t batch_cnt) {
-  return wpt_db_->WriteInternal(write_options_, batch, batch_cnt, this);
+  WritePreparedTransactionCallback callback(this);
+  return wpt_db_->WriteInternal(write_options_, batch, batch_cnt, this, &callback);
 }
 
 Status WritePreparedTxn::CommitInternal() {
+  WritePreparedTransactionCallback callback(this);
   ROCKS_LOG_DETAILS(db_impl_->immutable_db_options().info_log,
                     "CommitInternal prepare_seq: %" PRIu64, GetID());
   // We take the commit-time batch and append the Commit marker.
@@ -177,7 +177,7 @@ Status WritePreparedTxn::CommitInternal() {
   // redundantly reference the log that contains the prepared data.
   const uint64_t zero_log_number = 0ull;
   size_t batch_cnt = UNLIKELY(commit_batch_cnt) ? commit_batch_cnt : 1;
-  auto s = db_impl_->WriteImpl(write_options_, working_batch, nullptr, nullptr,
+  auto s = db_impl_->WriteImpl(write_options_, working_batch, &callback, nullptr,
                                zero_log_number, disable_memtable, &seq_used,
                                batch_cnt, &update_commit_map);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
@@ -217,7 +217,7 @@ Status WritePreparedTxn::CommitInternal() {
   const bool DISABLE_MEMTABLE = true;
   const size_t ONE_BATCH = 1;
   const uint64_t NO_REF_LOG = 0;
-  s = db_impl_->WriteImpl(write_options_, &empty_batch, nullptr, nullptr,
+  s = db_impl_->WriteImpl(write_options_, &empty_batch, &callback, nullptr,
                           NO_REF_LOG, DISABLE_MEMTABLE, &seq_used, ONE_BATCH,
                           &publish_seq_callback);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
@@ -455,12 +455,47 @@ Status WritePreparedTxn::RebuildFromWriteBatch(WriteBatch* src_batch) {
 }
 
 void WritePreparedTxn::TrackDirtyKey(uint32_t cfh_id, const std::string& key,
-                                       SequenceNumber seq, bool read_only,
-                                       bool exclusive) {
-  // Update map of all tracked keys for this transaction
-  TrackKey(&tracked_dirty_keys_, cfh_id, key, seq, read_only, exclusive);
+                                     SequenceNumber seq, SequenceNumber prep_seq,
+                                     bool read_only, bool exclusive) {
+  // Update map of all tracked dirty keys for this transaction
+  TrackKeyWithPrep(&tracked_dirty_keys_, cfh_id, key, seq, prep_seq, read_only, exclusive);
 
   // Do not consider savepoint
+}
+
+#define UNUSED(x) (void)(x)
+
+Status WritePreparedTxn::CheckDirtyReadRecords(DB* db) {
+
+  auto db_impl = static_cast_with_check<DBImpl, DB>(db);
+  UNUSED(db_impl);//Maybe useful for later
+
+  const TransactionKeyMap& key_map = GetTrackedDirtyKeys();
+
+  // verify there have been no writes to the key in the db since that sequence number
+  // TODO - something wrong using the optimistic transaction's validation logic, need to figure out
+//  Status result = TransactionUtil::CheckKeysForConflicts(db_impl, key_map, true /* cache_only */);
+
+//  if (!result.ok()) {
+//    return result;
+//  }
+
+  Status result;
+  // verify all the prep_seq have been committed
+  for (auto& key_map_iter : key_map) {
+    const auto& keys = key_map_iter.second;
+
+    for (const auto& key_iter : keys) {
+      const SequenceNumber key_seq = key_iter.second.seq;
+      const SequenceNumber prep_seq = key_iter.second.prep_seq;
+
+      if (!wpt_db_->IsInSnapshot(prep_seq, key_seq)) {
+        return Status::Busy();
+      }
+    }
+  }
+
+  return result;
 }
 
 }  // namespace rocksdb

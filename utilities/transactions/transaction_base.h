@@ -249,6 +249,11 @@ class TransactionBaseImpl : public Transaction {
                        const std::string& key, SequenceNumber seqno,
                        bool readonly, bool exclusive);
 
+  static void TrackKeyWithPrep(TransactionKeyMap* key_map, uint32_t cfh_id,
+                       const std::string& key, SequenceNumber seqno,
+                       SequenceNumber prep_seq, bool readonly,
+                       bool exclusive);
+
   // Called when UndoGetForUpdate determines that this key can be unlocked.
   virtual void UnlockGetForUpdate(ColumnFamilyHandle* column_family,
                                   const Slice& key) = 0;

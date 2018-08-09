@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
-#include <utilities/transactions/write_prepared_txn.h>
 
 #include "db/dbformat.h"
 #include "db/merge_context.h"
@@ -38,6 +37,7 @@
 #include "util/murmurhash.h"
 #include "util/mutexlock.h"
 #include "util/util.h"
+#include "utilities/transactions/write_prepared_txn.h"
 
 namespace rocksdb {
 
@@ -659,7 +659,7 @@ static bool SaveValue(void* arg, const char* entry) {
         Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
         if (find_dirty_value) {
           *(s->dirty_context->found_dirty) = true;
-          s->dirty_context->seq = s->seq;
+          s->dirty_context->prep_seq = s->seq;
         }
         *(s->status) = Status::OK();
         if (*(s->merge_in_progress)) {
