@@ -209,6 +209,8 @@ Status WriteUnpreparedTxn::FlushWriteBatchToDB(bool prepared) {
   // TODO(lth): Reduce duplicate code with WritePrepared prepare logic.
   WriteOptions write_options = write_options_;
   write_options.disableWAL = false;
+  //no need to sync WAL every time flushing write batches to DB
+  write_options.sync = false;
   const bool WRITE_AFTER_COMMIT = true;
   // MarkEndPrepare will change Noop marker to the appropriate marker.
   WriteBatchInternal::MarkEndPrepare(GetWriteBatch()->GetWriteBatch(), name_,
