@@ -514,7 +514,7 @@ Status WriteUnpreparedTxn::Get(const ReadOptions& options,
 
   DirtyReadContext context;
   bool is_dirty_read = true;
-  bool found_dirty = true;
+  bool found_dirty = false;
   context.is_dirty_read = &is_dirty_read;
   context.found_dirty = &found_dirty;
   context.prep_seq = 0;

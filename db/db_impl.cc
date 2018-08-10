@@ -1157,7 +1157,7 @@ Status DBImpl::GetImpl(const ReadOptions& read_options,
     PERF_TIMER_GUARD(get_from_output_files_time);
     sv->current->Get(read_options, lkey, pinnable_val, &s, &merge_context,
                      &range_del_agg, value_found, nullptr, nullptr, callback,
-                     is_blob_index);
+                     is_blob_index, dirty_context);
     RecordTick(stats_, MEMTABLE_MISS);
   }
 
