@@ -129,6 +129,14 @@ Status WritePreparedTxnDB::WriteInternal(const WriteOptions& write_options_orig,
   if (batch->Count() == 0) {
     // Otherwise our 1 seq per batch logic will break since there is no seq
     // increased for this batch.
+    if (callback == nullptr) {
+      return Status::OK();
+    }
+    //still need WritePreparedTransactionCallback check
+    auto * txn_callback = dynamic_cast<WritePreparedTransactionCallback*>(callback);
+    if (txn_callback != nullptr) {
+      return txn_callback->Callback(db_impl_);
+    }
     return Status::OK();
   }
   if (batch_cnt == 0) {  // not provided, then compute it
