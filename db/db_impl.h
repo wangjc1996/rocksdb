@@ -70,6 +70,7 @@ class WriteCallback;
 struct JobContext;
 struct ExternalSstFileInfo;
 struct MemTableInfo;
+struct DirtyReadContext;
 
 class DBImpl : public DB {
  public:
@@ -111,7 +112,7 @@ class DBImpl : public DB {
   Status GetImpl(const ReadOptions& options, ColumnFamilyHandle* column_family,
                  const Slice& key, PinnableSlice* value,
                  bool* value_found = nullptr, ReadCallback* callback = nullptr,
-                 bool* is_blob_index = nullptr);
+                 bool* is_blob_index = nullptr, DirtyReadContext* dirty_context = nullptr);
 
   using DB::MultiGet;
   virtual std::vector<Status> MultiGet(

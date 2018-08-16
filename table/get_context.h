@@ -12,6 +12,7 @@
 #include "rocksdb/statistics.h"
 #include "rocksdb/types.h"
 #include "table/block.h"
+#include "utilities/transactions/write_prepared_txn.h"
 
 namespace rocksdb {
 class MergeContext;
@@ -55,7 +56,8 @@ class GetContext {
              MergeContext* merge_context, RangeDelAggregator* range_del_agg,
              Env* env, SequenceNumber* seq = nullptr,
              PinnedIteratorsManager* _pinned_iters_mgr = nullptr,
-             ReadCallback* callback = nullptr, bool* is_blob_index = nullptr);
+             ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
+             DirtyReadContext* dirty_context = nullptr);
 
   void MarkKeyMayExist();
 
@@ -90,9 +92,17 @@ class GetContext {
 
   bool sample() const { return sample_; }
 
-  bool CheckCallback(SequenceNumber seq) {
+  bool CheckCallback(SequenceNumber _seq, bool* find_dirty_value) {
     if (callback_) {
-      return callback_->IsVisible(seq);
+      if (dirty_context_->is_dirty_read != nullptr && *dirty_context_->is_dirty_read) {
+        bool dirty_visible = callback_->IsVisibleForDirty(_seq);
+        bool clean_visible = callback_->IsVisible(_seq);
+        if(dirty_visible && !clean_visible)
+          *find_dirty_value = true;
+        return dirty_visible;
+      } else {
+        return callback_->IsVisible(_seq);
+      }
     }
     return true;
   }
@@ -122,6 +132,7 @@ class GetContext {
   ReadCallback* callback_;
   bool sample_;
   bool* is_blob_index_;
+  DirtyReadContext* dirty_context_;
 };
 
 void replayGetContextLog(const Slice& replay_log, const Slice& user_key,

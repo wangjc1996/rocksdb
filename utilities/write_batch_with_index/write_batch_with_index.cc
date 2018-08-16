@@ -834,12 +834,12 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(DB* db,
                                               const Slice& key,
                                               PinnableSlice* pinnable_val) {
   return GetFromBatchAndDB(db, read_options, column_family, key, pinnable_val,
-                           nullptr);
+                           nullptr, nullptr);
 }
 
 Status WriteBatchWithIndex::GetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
-    const Slice& key, PinnableSlice* pinnable_val, ReadCallback* callback) {
+    const Slice& key, PinnableSlice* pinnable_val, ReadCallback* callback, DirtyReadContext* dirty_context) {
   Status s;
   MergeContext merge_context;
   const ImmutableDBOptions& immuable_db_options =
@@ -882,7 +882,7 @@ Status WriteBatchWithIndex::GetFromBatchAndDB(
   } else {
     s = static_cast_with_check<DBImpl, DB>(db->GetRootDB())
             ->GetImpl(read_options, column_family, key, pinnable_val, nullptr,
-                      callback);
+                      callback, nullptr, dirty_context);
   }
 
   if (s.ok() || s.IsNotFound()) {  // DB Get Succeeded

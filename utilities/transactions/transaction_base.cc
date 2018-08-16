@@ -576,6 +576,33 @@ void TransactionBaseImpl::TrackKey(TransactionKeyMap* key_map, uint32_t cfh_id,
   iter->second.exclusive |= exclusive;
 }
 
+  void TransactionBaseImpl::TrackKeyWithPrep(TransactionKeyMap* key_map, uint32_t cfh_id,
+                                     const std::string& key, SequenceNumber seq,
+                                     SequenceNumber prep_seq, bool read_only,
+                                     bool exclusive) {
+    auto& cf_key_map = (*key_map)[cfh_id];
+    auto iter = cf_key_map.find(key);
+    if (iter == cf_key_map.end()) {
+      auto result = cf_key_map.insert({key, TransactionKeyMapInfo(seq, prep_seq)});
+      iter = result.first;
+    } else if (seq < iter->second.seq) {
+      // Now tracking this key with an earlier sequence number
+      iter->second.seq = seq;
+      iter->second.prep_seq = prep_seq;
+    }
+    // else we do not update the seq. The smaller the tracked seq, the stronger it
+    // the guarantee since it implies from the seq onward there has not been a
+    // concurrent update to the key. So we update the seq if it implies stronger
+    // guarantees, i.e., if it is smaller than the existing trakced seq.
+
+    if (read_only) {
+      iter->second.num_reads++;
+    } else {
+      iter->second.num_writes++;
+    }
+    iter->second.exclusive |= exclusive;
+  }
+
 std::unique_ptr<TransactionKeyMap>
 TransactionBaseImpl::GetTrackedKeysSinceSavePoint() {
   if (save_points_ != nullptr && !save_points_->empty()) {

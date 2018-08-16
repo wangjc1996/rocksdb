@@ -30,6 +30,7 @@ class DB;
 class ReadCallback;
 struct ReadOptions;
 struct DBOptions;
+struct DirtyReadContext;
 
 enum WriteType {
   kPutRecord,
@@ -245,7 +246,7 @@ class WriteBatchWithIndex : public WriteBatchBase {
 
   Status GetFromBatchAndDB(DB* db, const ReadOptions& read_options,
                            ColumnFamilyHandle* column_family, const Slice& key,
-                           PinnableSlice* value, ReadCallback* callback);
+                           PinnableSlice* value, ReadCallback* callback, DirtyReadContext* dirty_context);
   struct Rep;
   std::unique_ptr<Rep> rep;
 };

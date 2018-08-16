@@ -46,7 +46,7 @@ GetContext::GetContext(const Comparator* ucmp,
                        RangeDelAggregator* _range_del_agg, Env* env,
                        SequenceNumber* seq,
                        PinnedIteratorsManager* _pinned_iters_mgr,
-                       ReadCallback* callback, bool* is_blob_index)
+                       ReadCallback* callback, bool* is_blob_index, DirtyReadContext* dirty_context)
     : ucmp_(ucmp),
       merge_operator_(merge_operator),
       logger_(logger),
@@ -62,7 +62,8 @@ GetContext::GetContext(const Comparator* ucmp,
       replay_log_(nullptr),
       pinned_iters_mgr_(_pinned_iters_mgr),
       callback_(callback),
-      is_blob_index_(is_blob_index) {
+      is_blob_index_(is_blob_index),
+      dirty_context_(dirty_context) {
   if (seq_) {
     *seq_ = kMaxSequenceNumber;
   }
@@ -168,8 +169,9 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
          merge_context_ != nullptr);
   if (ucmp_->Equal(parsed_key.user_key, user_key_)) {
     *matched = true;
+    bool find_dirty_value = false;
     // If the value is not in the snapshot, skip it
-    if (!CheckCallback(parsed_key.sequence)) {
+    if (!CheckCallback(parsed_key.sequence, &find_dirty_value)) {
       return true;  // to continue to the next seq
     }
 
@@ -199,6 +201,10 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         }
         if (kNotFound == state_) {
           state_ = kFound;
+          if (find_dirty_value) {
+            *(dirty_context_->found_dirty) = true;
+            dirty_context_->prep_seq = parsed_key.sequence;
+          }
           if (LIKELY(pinnable_val_ != nullptr)) {
             if (LIKELY(value_pinner != nullptr)) {
               // If the backing resources for the value are provided, pin them
@@ -211,6 +217,10 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         } else if (kMerge == state_) {
           assert(merge_operator_ != nullptr);
           state_ = kFound;
+          if (find_dirty_value) {
+            *(dirty_context_->found_dirty) = true;
+            dirty_context_->prep_seq = parsed_key.sequence;
+          }
           if (LIKELY(pinnable_val_ != nullptr)) {
             Status merge_status = MergeHelper::TimedFullMerge(
                 merge_operator_, user_key_, &value,
