@@ -33,6 +33,11 @@
 namespace rocksdb {
 
 class WritePreparedTxnDB;
+struct DirtyReadContext {
+  bool *is_dirty_read;
+  bool *found_dirty;
+  SequenceNumber prep_seq;
+};
 
 // This impl could write to DB also uncommitted data and then later tell apart
 // committed data from uncommitted data. Uncommitted data could be after the
@@ -63,7 +68,13 @@ class WritePreparedTxn : public PessimisticTransaction {
 
   virtual void SetSnapshot() override;
 
- protected:
+  // Get list of keys in this transaction that used for dirty-read
+  const TransactionKeyMap& GetTrackedDirtyKeys() const { return tracked_dirty_keys_; }
+
+  void TrackDirtyKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
+                     SequenceNumber prep_seq, bool readonly, bool exclusive);
+
+protected:
   void Initialize(const TransactionOptions& txn_options) override;
   // Override the protected SetId to make it visible to the friend class
   // WritePreparedTxnDB
@@ -74,6 +85,7 @@ class WritePreparedTxn : public PessimisticTransaction {
   friend class WritePreparedTxnDB;
   friend class WriteUnpreparedTxnDB;
   friend class WriteUnpreparedTxn;
+  friend class WritePreparedTransactionCallback;
 
   Status PrepareInternal() override;
 
@@ -97,6 +109,10 @@ class WritePreparedTxn : public PessimisticTransaction {
 
   virtual Status RebuildFromWriteBatch(WriteBatch* src_batch) override;
 
+  // Returns OK if it is safe to commit this transaction.
+  // Should only be called on writer thread.
+  Status CheckDirtyReadRecords(DB* db);
+
   // No copying allowed
   WritePreparedTxn(const WritePreparedTxn&);
   void operator=(const WritePreparedTxn&);
@@ -104,6 +120,28 @@ class WritePreparedTxn : public PessimisticTransaction {
   WritePreparedTxnDB* wpt_db_;
   // Number of sub-batches in prepare
   size_t prepare_batch_cnt_ = 0;
+
+  // Map from column_family_id to map of dirty-read keys that are involved in this
+  // transaction.
+  // Only used in WritePreparedTxn or WriteUnpreparedTxn
+  TransactionKeyMap tracked_dirty_keys_;
+};
+
+// Used at commit time to trigger transaction validation
+// Validate that dirty read records have been committed
+class WritePreparedTransactionCallback : public WriteCallback {
+public:
+  explicit WritePreparedTransactionCallback(WritePreparedTxn* txn)
+      : txn_(txn) {}
+
+  Status Callback(DB* db) override {
+    return txn_->CheckDirtyReadRecords(db);
+  }
+
+  bool AllowWriteBatching() override { return false; }
+
+private:
+  WritePreparedTxn* txn_;
 };
 
 }  // namespace rocksdb

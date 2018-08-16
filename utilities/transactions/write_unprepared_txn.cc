@@ -31,7 +31,25 @@ bool WriteUnpreparedTxnReadCallback::IsVisible(SequenceNumber seq) {
     }
   }
 
-  return db_->IsInSnapshot(seq, snapshot_, min_uncommitted_);
+  return db_->IsInSnapshot(seq, snapshot_, min_uncommitted_, false);
+}
+
+bool WriteUnpreparedTxnReadCallback::IsVisibleForDirty(SequenceNumber seq) {
+  auto unprep_seqs = txn_->GetUnpreparedSequenceNumbers();
+
+  // Since unprep_seqs maps prep_seq => prepare_batch_cnt, to check if seq is
+  // in unprep_seqs, we have to check if seq is equal to prep_seq or any of
+  // the prepare_batch_cnt seq nums after it.
+  //
+  // TODO(lth): Can be optimized with std::lower_bound if unprep_seqs is
+  // large.
+  for (const auto& it : unprep_seqs) {
+    if (it.first <= seq && seq < it.first + it.second) {
+      return true;
+    }
+  }
+
+  return db_->IsInSnapshot(seq, snapshot_, min_uncommitted_, true);
 }
 
 SequenceNumber WriteUnpreparedTxnReadCallback::MaxUnpreparedSequenceNumber() {
@@ -191,6 +209,8 @@ Status WriteUnpreparedTxn::FlushWriteBatchToDB(bool prepared) {
   // TODO(lth): Reduce duplicate code with WritePrepared prepare logic.
   WriteOptions write_options = write_options_;
   write_options.disableWAL = false;
+  //no need to sync WAL every time flushing write batches to DB
+  write_options.sync = false;
   const bool WRITE_AFTER_COMMIT = true;
   // MarkEndPrepare will change Noop marker to the appropriate marker.
   WriteBatchInternal::MarkEndPrepare(GetWriteBatch()->GetWriteBatch(), name_,
@@ -261,6 +281,7 @@ Status WriteUnpreparedTxn::CommitWithoutPrepareInternal() {
 }
 
 Status WriteUnpreparedTxn::CommitInternal() {
+  WritePreparedTransactionCallback callback(this);
   // TODO(lth): Reduce duplicate code with WritePrepared commit logic.
 
   // We take the commit-time batch and append the Commit marker.  The Memtable
@@ -303,7 +324,7 @@ Status WriteUnpreparedTxn::CommitInternal() {
   // redundantly reference the log that contains the prepared data.
   const uint64_t zero_log_number = 0ull;
   size_t batch_cnt = UNLIKELY(commit_batch_cnt) ? commit_batch_cnt : 1;
-  auto s = db_impl_->WriteImpl(write_options_, working_batch, nullptr, nullptr,
+  auto s = db_impl_->WriteImpl(write_options_, working_batch, &callback, nullptr,
                                zero_log_number, disable_memtable, &seq_used,
                                batch_cnt, &update_commit_map);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
@@ -345,7 +366,7 @@ Status WriteUnpreparedTxn::CommitInternal() {
   const bool DISABLE_MEMTABLE = true;
   const size_t ONE_BATCH = 1;
   const uint64_t NO_REF_LOG = 0;
-  s = db_impl_->WriteImpl(write_options_, &empty_batch, nullptr, nullptr,
+  s = db_impl_->WriteImpl(write_options_, &empty_batch, &callback, nullptr,
                           NO_REF_LOG, DISABLE_MEMTABLE, &seq_used, ONE_BATCH,
                           &publish_seq_callback);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
@@ -492,8 +513,23 @@ Status WriteUnpreparedTxn::Get(const ReadOptions& options,
 
   WriteUnpreparedTxnReadCallback callback(wupt_db_, snap_seq, min_uncommitted,
                                           this);
-  return write_batch_.GetFromBatchAndDB(db_, options, column_family, key, value,
-                                        &callback);
+
+  DirtyReadContext context;
+  bool is_dirty_read = true;
+  bool found_dirty = false;
+  context.is_dirty_read = &is_dirty_read;
+  context.found_dirty = &found_dirty;
+  context.prep_seq = 0;
+
+  Status s = write_batch_.GetFromBatchAndDB(db_, options, column_family, key, value,
+                                            &callback, &context);
+  if (s.ok() && is_dirty_read && found_dirty) {
+    uint32_t cfh_id = GetColumnFamilyID(column_family);
+    std::string key_str = key.ToString();
+    //Track the dirty reads for later validation
+    TrackDirtyKey(cfh_id, key_str, snap_seq, context.prep_seq, true, false);
+  }
+  return s;
 }
 
 Iterator* WriteUnpreparedTxn::GetIterator(const ReadOptions& options) {

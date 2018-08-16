@@ -7,6 +7,8 @@
 
 #include "rocksdb/types.h"
 
+#define UNUSED(x) (void)(x)
+
 namespace rocksdb {
 
 class ReadCallback {
@@ -16,6 +18,9 @@ class ReadCallback {
   // Will be called to see if the seq number visible; if not it moves on to
   // the next seq number.
   virtual bool IsVisible(SequenceNumber seq) = 0;
+
+  //override in WritePreparedTxnReadCallback to support dirty_read action
+  inline virtual bool IsVisibleForDirty(SequenceNumber seq) { UNUSED(seq); return false; };
 
   // This is called to determine the maximum visible sequence number for the
   // current transaction for read-your-own-write semantics. This is so that

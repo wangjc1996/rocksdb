@@ -1164,7 +1164,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
                   MergeContext* merge_context,
                   RangeDelAggregator* range_del_agg, bool* value_found,
                   bool* key_exists, SequenceNumber* seq, ReadCallback* callback,
-                  bool* is_blob) {
+                  bool* is_blob, DirtyReadContext* dirty_context) {
   Slice ikey = k.internal_key();
   Slice user_key = k.user_key();
 
@@ -1180,7 +1180,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
       user_comparator(), merge_operator_, info_log_, db_statistics_,
       status->ok() ? GetContext::kNotFound : GetContext::kMerge, user_key,
       value, value_found, merge_context, range_del_agg, this->env_, seq,
-      merge_operator_ ? &pinned_iters_mgr : nullptr, callback, is_blob);
+      merge_operator_ ? &pinned_iters_mgr : nullptr, callback, is_blob, dirty_context);
 
   // Pin blocks that we read to hold merge operands
   if (merge_operator_) {

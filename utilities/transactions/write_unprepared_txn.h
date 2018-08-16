@@ -16,6 +16,7 @@ namespace rocksdb {
 
 class WriteUnpreparedTxnDB;
 class WriteUnpreparedTxn;
+struct DirtyReadContext;
 
 class WriteUnpreparedTxnReadCallback : public ReadCallback {
  public:
@@ -29,6 +30,7 @@ class WriteUnpreparedTxnReadCallback : public ReadCallback {
         txn_(txn) {}
 
   virtual bool IsVisible(SequenceNumber seq) override;
+  virtual bool IsVisibleForDirty(SequenceNumber seq) override;
   virtual SequenceNumber MaxUnpreparedSequenceNumber() override;
 
  private:

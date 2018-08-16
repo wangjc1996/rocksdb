@@ -123,12 +123,20 @@ Status WritePreparedTxnDB::Write(
 
 Status WritePreparedTxnDB::WriteInternal(const WriteOptions& write_options_orig,
                                          WriteBatch* batch, size_t batch_cnt,
-                                         WritePreparedTxn* txn) {
+                                         WritePreparedTxn* txn, WriteCallback* callback) {
   ROCKS_LOG_DETAILS(db_impl_->immutable_db_options().info_log,
                     "CommitBatchInternal");
   if (batch->Count() == 0) {
     // Otherwise our 1 seq per batch logic will break since there is no seq
     // increased for this batch.
+    if (callback == nullptr) {
+      return Status::OK();
+    }
+    //still need WritePreparedTransactionCallback check
+    auto * txn_callback = dynamic_cast<WritePreparedTransactionCallback*>(callback);
+    if (txn_callback != nullptr) {
+      return txn_callback->Callback(db_impl_);
+    }
     return Status::OK();
   }
   if (batch_cnt == 0) {  // not provided, then compute it
@@ -169,7 +177,7 @@ Status WritePreparedTxnDB::WriteInternal(const WriteOptions& write_options_orig,
   } else {
     pre_release_callback = &add_prepared_callback;
   }
-  auto s = db_impl_->WriteImpl(write_options, batch, nullptr, nullptr,
+  auto s = db_impl_->WriteImpl(write_options, batch, callback, nullptr,
                                no_log_ref, !DISABLE_MEMTABLE, &seq_used,
                                batch_cnt, pre_release_callback);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);
@@ -198,7 +206,7 @@ Status WritePreparedTxnDB::WriteInternal(const WriteOptions& write_options_orig,
   const size_t ONE_BATCH = 1;
   // In the absence of Prepare markers, use Noop as a batch separator
   WriteBatchInternal::InsertNoop(&empty_batch);
-  s = db_impl_->WriteImpl(write_options, &empty_batch, nullptr, nullptr,
+  s = db_impl_->WriteImpl(write_options, &empty_batch, callback, nullptr,
                           no_log_ref, DISABLE_MEMTABLE, &seq_used, ONE_BATCH,
                           &update_commit_map_with_prepare);
   assert(!s.ok() || seq_used != kMaxSequenceNumber);

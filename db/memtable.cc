@@ -37,6 +37,7 @@
 #include "util/murmurhash.h"
 #include "util/mutexlock.h"
 #include "util/util.h"
+#include "utilities/transactions/write_prepared_txn.h"
 
 namespace rocksdb {
 
@@ -577,10 +578,19 @@ struct Saver {
   Env* env_;
   ReadCallback* callback_;
   bool* is_blob_index;
+  DirtyReadContext* dirty_context;
 
-  bool CheckCallback(SequenceNumber _seq) {
+  bool CheckCallback(SequenceNumber _seq, bool* find_dirty_value) {
     if (callback_) {
-      return callback_->IsVisible(_seq);
+      if (dirty_context->is_dirty_read != nullptr && *dirty_context->is_dirty_read) {
+        bool dirty_visible = callback_->IsVisibleForDirty(_seq);
+        bool clean_visible = callback_->IsVisible(_seq);
+        if(dirty_visible && !clean_visible)
+          *find_dirty_value = true;
+        return dirty_visible;
+      } else {
+        return callback_->IsVisible(_seq);
+      }
     }
     return true;
   }
@@ -615,7 +625,8 @@ static bool SaveValue(void* arg, const char* entry) {
     SequenceNumber seq;
     UnPackSequenceAndType(tag, &seq, &type);
     // If the value is not in the snapshot, skip it
-    if (!s->CheckCallback(seq)) {
+    bool find_dirty_value = false;
+    if (!s->CheckCallback(seq, &find_dirty_value)) {
       return true;  // to continue to the next seq
     }
 
@@ -646,6 +657,10 @@ static bool SaveValue(void* arg, const char* entry) {
           s->mem->GetLock(s->key->user_key())->ReadLock();
         }
         Slice v = GetLengthPrefixedSlice(key_ptr + key_length);
+        if (find_dirty_value) {
+          *(s->dirty_context->found_dirty) = true;
+          s->dirty_context->prep_seq = s->seq;
+        }
         *(s->status) = Status::OK();
         if (*(s->merge_in_progress)) {
           if (s->value != nullptr) {
@@ -721,7 +736,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s,
                    MergeContext* merge_context,
                    RangeDelAggregator* range_del_agg, SequenceNumber* seq,
                    const ReadOptions& read_opts, ReadCallback* callback,
-                   bool* is_blob_index) {
+                   bool* is_blob_index, DirtyReadContext* dirty_context) {
   // The sequence number is updated synchronously in version_set.h
   if (IsEmpty()) {
     // Avoiding recording stats for speed.
@@ -769,6 +784,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s,
     saver.env_ = env_;
     saver.callback_ = callback;
     saver.is_blob_index = is_blob_index;
+    saver.dirty_context = dirty_context;
     table_->Get(key, &saver, SaveValue);
 
     *seq = saver.seq;
