@@ -299,6 +299,15 @@ Status TransactionBaseImpl::Put(ColumnFamilyHandle* column_family,
     if (s.ok()) {
       num_puts_++;
     }
+
+    SequenceNumber seq;
+    if (snapshot_) {
+      seq = snapshot_->GetSequenceNumber();
+    } else {
+      seq = db_->GetLatestSequenceNumber();
+    }
+
+    s = dbimpl_->WriteDirty(column_family, key, value, seq, 0); // TODO TXN id
   }
 
   return s;
@@ -315,6 +324,15 @@ Status TransactionBaseImpl::Put(ColumnFamilyHandle* column_family,
     if (s.ok()) {
       num_puts_++;
     }
+
+    SequenceNumber seq;
+    if (snapshot_) {
+      seq = snapshot_->GetSequenceNumber();
+    } else {
+      seq = db_->GetLatestSequenceNumber();
+    }
+
+    s = dbimpl_->WriteDirty(column_family, key, value, seq, 0); // TODO TXN id
   }
 
   return s;

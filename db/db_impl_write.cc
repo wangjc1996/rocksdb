@@ -1497,4 +1497,25 @@ Status DB::Merge(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   }
   return Write(opt, &batch);
 }
+
+Status DBImpl::WriteDirty(ColumnFamilyHandle* column_family, const Slice& key, const Slice& value, SequenceNumber seq, TxnNumber txn_id) {
+  string key_str = key.ToString();
+  string value_str = value.ToString();
+
+  uint32_t id = 0;
+  if (column_family != nullptr) {
+    id = column_family->GetID();
+  }
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(id);
+  auto* dirty_buffer = cfd->dirty_buffer();
+  return dirty_buffer->Put(key_str, value_str, seq, txn_id);
+}
+
+Status DBImpl::WriteDirty(ColumnFamilyHandle* column_family, const SliceParts& key, const SliceParts& value, SequenceNumber seq, TxnNumber txn_id) {
+  std::string key_buf, value_buf;
+  Slice key_slice(key, &key_buf);
+  Slice value_slice(value, &value_buf);
+  return WriteDirty(column_family, key_slice, value_slice, seq, txn_id);
+}
+
 }  // namespace rocksdb

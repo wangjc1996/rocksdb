@@ -25,6 +25,7 @@
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
 #include "util/thread_local.h"
+#include "dirty_buffer.h"
 
 namespace rocksdb {
 
@@ -240,6 +241,7 @@ class ColumnFamilyData {
 
   InternalStats* internal_stats() { return internal_stats_.get(); }
 
+  DirtyBuffer* dirty_buffer() { return dirty_buffer_; }
   MemTableList* imm() { return &imm_; }
   MemTable* mem() { return mem_; }
   Version* current() { return current_; }
@@ -418,6 +420,7 @@ class ColumnFamilyData {
 
   WriteBufferManager* write_buffer_manager_;
 
+  DirtyBuffer* dirty_buffer_;
   MemTable* mem_;
   MemTableList imm_;
   SuperVersion* super_version_;

@@ -792,6 +792,10 @@ class DBImpl : public DB {
   // Actual implementation of Close()
   Status CloseImpl();
 
+  Status WriteDirty(ColumnFamilyHandle* column_family, const Slice& key, const Slice& value, SequenceNumber seq, TxnNumber txn_id);
+
+  Status WriteDirty(ColumnFamilyHandle* column_family, const SliceParts& key, const SliceParts& value, SequenceNumber seq, TxnNumber txn_id);
+
  private:
   friend class DB;
   friend class InternalStats;
