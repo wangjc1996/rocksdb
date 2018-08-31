@@ -182,13 +182,17 @@ Status TransactionBaseImpl::RollbackToSavePoint() {
 Status TransactionBaseImpl::Get(const ReadOptions& read_options,
                                 ColumnFamilyHandle* column_family,
                                 const Slice& key, std::string* value) {
-  assert(value != nullptr);
-  PinnableSlice pinnable_val(value);
-  assert(!pinnable_val.IsPinned());
-  auto s = Get(read_options, column_family, key, &pinnable_val);
-  if (s.ok() && pinnable_val.IsPinned()) {
-    value->assign(pinnable_val.data(), pinnable_val.size());
-  }  // else value is already assigned
+  auto s = TryLock(column_family, key, true /* read_only */, false /* not exclusive */);
+
+  if (s.ok() && value != nullptr) {
+    assert(value != nullptr);
+    PinnableSlice pinnable_val(value);
+    assert(!pinnable_val.IsPinned());
+    s = Get(read_options, column_family, key, &pinnable_val);
+    if (s.ok() && pinnable_val.IsPinned()) {
+      value->assign(pinnable_val.data(), pinnable_val.size());
+    }  // else value is already assigned
+  }
   return s;
 }
 

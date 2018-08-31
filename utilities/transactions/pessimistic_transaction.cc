@@ -320,6 +320,12 @@ Status PessimisticTransaction::Commit() {
 }
 
 Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
+//  PessimisticTransactionCallback callback(this);
+//
+//  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+//
+//  Status s = db_impl->WriteWithCallback(
+//      write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
   Status s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
   return s;
 }
@@ -643,6 +649,19 @@ Status PessimisticTransaction::SetName(const TransactionName& name) {
     s = Status::InvalidArgument("Transaction is beyond state for naming.");
   }
   return s;
+}
+
+Status PessimisticTransaction::CheckTransactionForConflicts(DB* db) {
+  Status result;
+
+  auto db_impl = static_cast_with_check<DBImpl, DB>(db);
+
+  // Since we are on the write thread and do not want to block other writers,
+  // we will do a cache-only conflict check.  This can result in TryAgain
+  // getting returned if there is not sufficient memtable history to check
+  // for conflicts.
+  return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys(),
+                                                true /* cache_only */);
 }
 
 }  // namespace rocksdb
