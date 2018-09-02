@@ -282,6 +282,8 @@ Status PessimisticTransaction::Commit() {
       }
       Clear();
       if (s.ok()) {
+        SequenceNumber seq = db_->GetLatestSequenceNumber();
+        TransactionUtil::CommitValidationMap(db_impl_, GetTrackedKeys(), seq);
         txn_state_.store(COMMITED);
       }
     }
@@ -295,6 +297,9 @@ Status PessimisticTransaction::Commit() {
                      "Commit write failed");
       return s;
     }
+
+    SequenceNumber seq = db_->GetLatestSequenceNumber();
+    TransactionUtil::CommitValidationMap(db_impl_, GetTrackedKeys(), seq);
 
     // FindObsoleteFiles must now look to the memtables
     // to determine what prep logs must be kept around,

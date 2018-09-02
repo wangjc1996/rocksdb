@@ -64,6 +64,8 @@ Status OptimisticTransaction::Commit() {
       write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
 
   if (s.ok()) {
+    SequenceNumber seq = db_->GetLatestSequenceNumber();
+    TransactionUtil::CommitValidationMap(db_impl, GetTrackedKeys(), seq);
     Clear();
   }
 
