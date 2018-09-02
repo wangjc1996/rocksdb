@@ -46,10 +46,6 @@ class OptimisticTransaction : public TransactionBaseImpl {
 
   Status SetName(const TransactionName& name) override;
 
-  using TransactionBaseImpl::Get;
-  virtual Status Get(const ReadOptions& options, ColumnFamilyHandle* column_family,
-             const Slice& key, std::string* value) override;
-
  protected:
   Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
                  bool read_only, bool exclusive,

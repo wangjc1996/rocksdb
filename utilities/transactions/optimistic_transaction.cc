@@ -75,15 +75,6 @@ Status OptimisticTransaction::Rollback() {
   return Status::OK();
 }
 
-Status OptimisticTransaction::Get(const ReadOptions& options,
-                                  ColumnFamilyHandle* column_family,
-                                  const Slice& key, std::string* value) {
-
-  Status s = TryLock(column_family, key, true /* read_only */, false /* not exclusive */);
-
-  return TransactionBaseImpl::Get(options, column_family, key, value);
-}
-
 // Record this key so that we can check it for conflicts at commit time.
 //
 // 'exclusive' is unused for OptimisticTransaction.
