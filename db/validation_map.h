@@ -21,7 +21,8 @@
 #include "port/port_posix.h"
 
 namespace rocksdb {
-class Mutex;
+
+class RWMutex;
 
 typedef uint64_t SequenceNumber;
 

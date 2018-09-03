@@ -280,10 +280,14 @@ Status PessimisticTransaction::Commit() {
       if (!name_.empty()) {
         txn_db_impl_->UnregisterTransaction(this);
       }
-      Clear();
+
       if (s.ok()) {
         SequenceNumber seq = db_->GetLatestSequenceNumber();
         TransactionUtil::CommitValidationMap(db_impl_, GetTrackedKeys(), seq);
+      }
+
+      Clear();
+      if (s.ok()) {
         txn_state_.store(COMMITED);
       }
     }
@@ -297,9 +301,6 @@ Status PessimisticTransaction::Commit() {
                      "Commit write failed");
       return s;
     }
-
-    SequenceNumber seq = db_->GetLatestSequenceNumber();
-    TransactionUtil::CommitValidationMap(db_impl_, GetTrackedKeys(), seq);
 
     // FindObsoleteFiles must now look to the memtables
     // to determine what prep logs must be kept around,
@@ -325,13 +326,13 @@ Status PessimisticTransaction::Commit() {
 }
 
 Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
-//  PessimisticTransactionCallback callback(this);
-//
-//  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
-//
-//  Status s = db_impl->WriteWithCallback(
-//      write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
-  Status s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+  PessimisticTransactionCallback callback(this);
+
+  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+
+  Status s = db_impl->WriteWithCallback(
+      write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
+//  Status s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
   return s;
 }
 
