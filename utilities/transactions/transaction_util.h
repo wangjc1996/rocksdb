@@ -81,8 +81,7 @@ class TransactionUtil {
                          const std::string& key, bool cache_only,
                          ReadCallback* snap_checker = nullptr);
 
-  static Status CheckKeyWithValidaionMap(DBImpl* db_impl, SuperVersion* sv,
-                         SequenceNumber snap_seq, const std::string& key);
+  static Status CheckKeyWithValidationMap(SuperVersion* sv, SequenceNumber snap_seq, const std::string& key);
 
 };
 

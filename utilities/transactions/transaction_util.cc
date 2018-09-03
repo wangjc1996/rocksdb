@@ -160,8 +160,7 @@ Status TransactionUtil::CheckKeysForConflicts(DBImpl* db_impl,
   return result;
 }
 
-Status TransactionUtil::CheckKeyWithValidaionMap(DBImpl* db_impl, SuperVersion* sv,
-                                                 SequenceNumber snap_seq, const std::string& key) {
+Status TransactionUtil::CheckKeyWithValidationMap(SuperVersion* sv, SequenceNumber snap_seq, const std::string& key) {
   Status result;
 
   auto* cfd = sv->current->cfd();
@@ -177,6 +176,7 @@ Status TransactionUtil::CheckKeyWithValidaionMap(DBImpl* db_impl, SuperVersion* 
   }
   return result;
 }
+
 Status TransactionUtil::CheckKeysForConflicts(DBImpl* db_impl, const TransactionKeyMap& key_map) {
   Status result;
 
@@ -191,16 +191,13 @@ Status TransactionUtil::CheckKeysForConflicts(DBImpl* db_impl, const Transaction
       break;
     }
 
-    SequenceNumber earliest_seq =
-        db_impl->GetEarliestMemTableSequenceNumber(sv, true);
-
     // For each of the keys in this transaction, check to see if someone has
     // written to this key since the start of the transaction.
     for (const auto& key_iter : keys) {
       const auto& key = key_iter.first;
       const SequenceNumber key_seq = key_iter.second.seq;
 
-      result = CheckKeyWithValidaionMap(db_impl, sv, key_seq, key);
+      result = CheckKeyWithValidationMap(sv, key_seq, key);
 
       if (!result.ok()) {
         break;
