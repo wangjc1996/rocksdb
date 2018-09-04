@@ -230,7 +230,7 @@ public:
     return txn_->CheckTransactionForConflicts(db);
   }
 
-  bool AllowWriteBatching() override { return false; }
+  bool AllowWriteBatching() override { return true; }
 
 private:
   PessimisticTransaction* txn_;

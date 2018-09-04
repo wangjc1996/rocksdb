@@ -120,9 +120,9 @@ Status OptimisticTransaction::CheckTransactionForConflicts(DB* db) {
   // we will do a cache-only conflict check.  This can result in TryAgain
   // getting returned if there is not sufficient memtable history to check
   // for conflicts.
-//  return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys(),
-//                                                true /* cache_only */);
-    return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys());
+  return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys(),
+                                                true /* cache_only */);
+//    return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys());
 }
 
 Status OptimisticTransaction::SetName(const TransactionName& /* unused */) {
