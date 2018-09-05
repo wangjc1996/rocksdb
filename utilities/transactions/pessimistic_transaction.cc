@@ -281,10 +281,10 @@ Status PessimisticTransaction::Commit() {
         txn_db_impl_->UnregisterTransaction(this);
       }
 
-      if (s.ok()) {
-        SequenceNumber seq = db_->GetLatestSequenceNumber();
-        TransactionUtil::CommitValidationMap(db_impl_, GetTrackedKeys(), seq);
-      }
+//      if (s.ok()) {
+//        SequenceNumber seq = db_->GetLatestSequenceNumber();
+//        TransactionUtil::CommitValidationMap(db_impl_, GetTrackedKeys(), seq);
+//      }
 
       Clear();
       if (s.ok()) {
