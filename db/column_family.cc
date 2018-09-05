@@ -417,6 +417,7 @@ ColumnFamilyData::ColumnFamilyData(
           cf_options.table_factory->IsDeleteRangeSupported()),
       write_buffer_manager_(write_buffer_manager),
       dirty_buffer_(new DirtyBuffer(id)),
+      validation_map_(new ValidationMap(id)),
       mem_(nullptr),
       imm_(ioptions_.min_write_buffer_number_to_merge,
            ioptions_.max_write_buffer_number_to_maintain),

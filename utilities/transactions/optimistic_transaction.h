@@ -46,10 +46,6 @@ class OptimisticTransaction : public TransactionBaseImpl {
 
   Status SetName(const TransactionName& name) override;
 
-  using TransactionBaseImpl::Get;
-  virtual Status Get(const ReadOptions& options, ColumnFamilyHandle* column_family,
-             const Slice& key, std::string* value) override;
-
  protected:
   Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
                  bool read_only, bool exclusive,
@@ -91,7 +87,7 @@ class OptimisticTransactionCallback : public WriteCallback {
     return txn_->CheckTransactionForConflicts(db);
   }
 
-  bool AllowWriteBatching() override { return false; }
+  bool AllowWriteBatching() override { return true; }
 
  private:
   OptimisticTransaction* txn_;

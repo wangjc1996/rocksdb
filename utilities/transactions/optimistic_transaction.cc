@@ -64,6 +64,8 @@ Status OptimisticTransaction::Commit() {
       write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
 
   if (s.ok()) {
+//    SequenceNumber seq = db_->GetLatestSequenceNumber();
+//    TransactionUtil::CommitValidationMap(db_impl, GetTrackedKeys(), seq);
     Clear();
   }
 
@@ -73,15 +75,6 @@ Status OptimisticTransaction::Commit() {
 Status OptimisticTransaction::Rollback() {
   Clear();
   return Status::OK();
-}
-
-Status OptimisticTransaction::Get(const ReadOptions& options,
-                                  ColumnFamilyHandle* column_family,
-                                  const Slice& key, std::string* value) {
-
-  Status s = TryLock(column_family, key, true /* read_only */, false /* not exclusive */);
-
-  return TransactionBaseImpl::Get(options, column_family, key, value);
 }
 
 // Record this key so that we can check it for conflicts at commit time.
@@ -129,6 +122,7 @@ Status OptimisticTransaction::CheckTransactionForConflicts(DB* db) {
   // for conflicts.
   return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys(),
                                                 true /* cache_only */);
+//    return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys());
 }
 
 Status OptimisticTransaction::SetName(const TransactionName& /* unused */) {

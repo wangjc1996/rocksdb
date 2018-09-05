@@ -71,11 +71,18 @@ class TransactionUtil {
                                       const TransactionKeyMap& keys,
                                       bool cache_only);
 
+  static Status CheckKeysForConflicts(DBImpl* db_impl, const TransactionKeyMap& keys);
+
+  static Status CommitValidationMap(DBImpl* db_impl, const TransactionKeyMap& keys, SequenceNumber seq);
+
  private:
   static Status CheckKey(DBImpl* db_impl, SuperVersion* sv,
                          SequenceNumber earliest_seq, SequenceNumber snap_seq,
                          const std::string& key, bool cache_only,
                          ReadCallback* snap_checker = nullptr);
+
+  static Status CheckKeyWithValidationMap(SuperVersion* sv, SequenceNumber snap_seq, const std::string& key);
+
 };
 
 }  // namespace rocksdb

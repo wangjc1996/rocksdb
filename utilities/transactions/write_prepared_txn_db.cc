@@ -133,11 +133,11 @@ Status WritePreparedTxnDB::WriteInternal(const WriteOptions& write_options_orig,
       return Status::OK();
     }
     //still need WritePreparedTransactionCallback check
-    auto * txn_callback = dynamic_cast<WritePreparedTransactionCallback*>(callback);
-    if (txn_callback != nullptr) {
-      return txn_callback->Callback(db_impl_);
-    }
-    return Status::OK();
+//    auto * txn_callback = dynamic_cast<WritePreparedTransactionCallback*>(callback);
+//    if (txn_callback != nullptr) {
+//      return txn_callback->Callback(db_impl_);
+//    }
+//    return Status::OK();
   }
   if (batch_cnt == 0) {  // not provided, then compute it
     // TODO(myabandeh): add an option to allow user skipping this cost

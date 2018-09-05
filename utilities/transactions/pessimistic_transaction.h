@@ -112,6 +112,8 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   int64_t GetDeadlockDetectDepth() const { return deadlock_detect_depth_; }
 
+  Status CheckTransactionForConflicts(DB* db);
+
  protected:
   // Refer to
   // TransactionOptions::use_only_the_last_commit_time_batch_for_recovery
@@ -216,6 +218,22 @@ class WriteCommittedTxn : public PessimisticTransaction {
   // No copying allowed
   WriteCommittedTxn(const WriteCommittedTxn&);
   void operator=(const WriteCommittedTxn&);
+};
+
+// Used at commit time to trigger transaction validation
+class PessimisticTransactionCallback : public WriteCallback {
+public:
+  explicit PessimisticTransactionCallback(PessimisticTransaction* txn)
+      : txn_(txn) {}
+
+  Status Callback(DB* db) override {
+    return txn_->CheckTransactionForConflicts(db);
+  }
+
+  bool AllowWriteBatching() override { return true; }
+
+private:
+  PessimisticTransaction* txn_;
 };
 
 }  // namespace rocksdb

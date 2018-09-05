@@ -280,6 +280,12 @@ Status PessimisticTransaction::Commit() {
       if (!name_.empty()) {
         txn_db_impl_->UnregisterTransaction(this);
       }
+
+//      if (s.ok()) {
+//        SequenceNumber seq = db_->GetLatestSequenceNumber();
+//        TransactionUtil::CommitValidationMap(db_impl_, GetTrackedKeys(), seq);
+//      }
+
       Clear();
       if (s.ok()) {
         txn_state_.store(COMMITED);
@@ -320,6 +326,12 @@ Status PessimisticTransaction::Commit() {
 }
 
 Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
+//  PessimisticTransactionCallback callback(this);
+//
+//  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+//
+//  Status s = db_impl->WriteWithCallback(
+//      write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
   Status s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
   return s;
 }
@@ -492,6 +504,27 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
 Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
                                        const Slice& key, bool read_only,
                                        bool exclusive, bool skip_validate) {
+//  string special_key = "500";
+//  if (key.ToString() != special_key) {
+//    uint32_t cfh_id = GetColumnFamilyID(column_family);
+//
+//    SetSnapshotIfNeeded();
+//
+//    SequenceNumber seq;
+//    if (snapshot_) {
+//      seq = snapshot_->GetSequenceNumber();
+//    } else {
+//      seq = db_->GetLatestSequenceNumber();
+//    }
+//
+//    std::string key_str = key.ToString();
+//
+//    TrackKey(cfh_id, key_str, seq, read_only, exclusive);
+//
+//    // Always return OK. Conflict checking will happen at commit time.
+//    return Status::OK();
+//  }
+
   uint32_t cfh_id = GetColumnFamilyID(column_family);
   std::string key_str = key.ToString();
   bool previously_locked;
@@ -643,6 +676,20 @@ Status PessimisticTransaction::SetName(const TransactionName& name) {
     s = Status::InvalidArgument("Transaction is beyond state for naming.");
   }
   return s;
+}
+
+Status PessimisticTransaction::CheckTransactionForConflicts(DB* db) {
+  Status result;
+
+  auto db_impl = static_cast_with_check<DBImpl, DB>(db);
+
+  // Since we are on the write thread and do not want to block other writers,
+  // we will do a cache-only conflict check.  This can result in TryAgain
+  // getting returned if there is not sufficient memtable history to check
+  // for conflicts.
+  return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys(),
+                                                true /* cache_only */);
+//  return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys());
 }
 
 }  // namespace rocksdb

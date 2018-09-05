@@ -598,6 +598,12 @@ void TransactionLockMgr::UnLockKey(const PessimisticTransaction* txn,
 #ifdef NDEBUG
   (void)env;
 #endif
+
+//  string special_key = "500";
+//  if (key != special_key) {
+//    return;
+//  }
+
   TransactionID txn_id = txn->GetID();
 
   auto stripe_iter = stripe->keys.find(key);
