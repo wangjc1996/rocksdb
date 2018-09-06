@@ -257,6 +257,13 @@ class TransactionBaseImpl : public Transaction {
                        const std::string& key, SequenceNumber seqno,
                        bool readonly, bool exclusive);
 
+  void TrackDirtyKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
+                     TransactionID txn_id, bool readonly, bool exclusive);
+
+  static void TrackDirtyKey(TransactionKeyMap* key_map, uint32_t cfh_id,
+                            const std::string& key, SequenceNumber seqno,
+                            TransactionID txn_id, bool readonly, bool exclusive);
+
   // Called when UndoGetForUpdate determines that this key can be unlocked.
   virtual void UnlockGetForUpdate(ColumnFamilyHandle* column_family,
                                   const Slice& key) = 0;
@@ -325,6 +332,10 @@ class TransactionBaseImpl : public Transaction {
   // For Pessimistic Transactions this is the list of locked keys.
   // Optimistic Transactions will wait till commit time to do conflict checking.
   TransactionKeyMap tracked_keys_;
+
+  // Map from column_family_id to map of dirty read keys that are involved in this
+  // transaction.
+  TransactionKeyMap dirty_read_keys_;
 
   // If true, future Put/Merge/Deletes will be indexed in the
   // WriteBatchWithIndex.

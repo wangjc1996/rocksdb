@@ -216,6 +216,24 @@ Status TransactionBaseImpl::Get(const ReadOptions& read_options,
     s = dbimpl_->GetDirty(column_family, key, &buffer_value, &context);
     if (s.ok() && is_dirty_read && found_dirty) {
       pinnable_val->PinSelf();
+
+      // Track dirty read info
+      uint32_t cfh_id = GetColumnFamilyID(column_family);
+
+      SetSnapshotIfNeeded();
+
+      SequenceNumber seq;
+      if (snapshot_) {
+        seq = snapshot_->GetSequenceNumber();
+      } else {
+        seq = db_->GetLatestSequenceNumber();
+      }
+
+      std::string key_str = key.ToString();
+
+      assert(context.txn_id != 0);
+      TrackDirtyKey(cfh_id, key_str, seq, context.txn_id, true, false);
+
       return s;
     }
   }
@@ -583,6 +601,40 @@ void TransactionBaseImpl::TrackKey(TransactionKeyMap* key_map, uint32_t cfh_id,
   auto iter = cf_key_map.find(key);
   if (iter == cf_key_map.end()) {
     auto result = cf_key_map.insert({key, TransactionKeyMapInfo(seq)});
+    iter = result.first;
+  } else if (seq < iter->second.seq) {
+    // Now tracking this key with an earlier sequence number
+    iter->second.seq = seq;
+  }
+  // else we do not update the seq. The smaller the tracked seq, the stronger it
+  // the guarantee since it implies from the seq onward there has not been a
+  // concurrent update to the key. So we update the seq if it implies stronger
+  // guarantees, i.e., if it is smaller than the existing trakced seq.
+
+  if (read_only) {
+    iter->second.num_reads++;
+  } else {
+    iter->second.num_writes++;
+  }
+  iter->second.exclusive |= exclusive;
+}
+
+void TransactionBaseImpl::TrackDirtyKey(uint32_t cfh_id, const std::string& key,
+                                        SequenceNumber seq, TransactionID txn_id,
+                                        bool read_only, bool exclusive) {
+    // Update map of all tracked keys for this transaction
+  TrackDirtyKey(&dirty_read_keys_, cfh_id, key, seq, txn_id, read_only, exclusive);
+
+    // Do not consider savepoint here
+}
+
+void TransactionBaseImpl::TrackDirtyKey(TransactionKeyMap* key_map, uint32_t cfh_id,
+                                        const std::string& key, SequenceNumber seq,
+                                        TransactionID txn_id, bool read_only, bool exclusive) {
+  auto& cf_key_map = (*key_map)[cfh_id];
+  auto iter = cf_key_map.find(key);
+  if (iter == cf_key_map.end()) {
+    auto result = cf_key_map.insert({key, TransactionKeyMapInfo(seq, txn_id)});
     iter = result.first;
   } else if (seq < iter->second.seq) {
     // Now tracking this key with an earlier sequence number
