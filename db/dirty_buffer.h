@@ -18,28 +18,24 @@
 #include <string>
 
 #include "db/dbformat.h"
-//#include "db/range_del_aggregator.h"
-//#include "db/read_callback.h"
-//#include "db/version_edit.h"
-//#include "monitoring/instrumented_mutex.h"
-//#include "options/cf_options.h"
-//#include "rocksdb/db.h"
-//#include "rocksdb/env.h"
-//#include "rocksdb/memtablerep.h"
-//#include "util/allocator.h"
-//#include "util/concurrent_arena.h"
-//#include "util/dynamic_bloom.h"
-//#include "util/hash.h"
+#include "port/port_posix.h"
 
 namespace rocksdb {
 
-class Mutex;
+class RWMutex;
 class DirtyVersion;
 
 typedef uint64_t SequenceNumber;
-typedef uint64_t TxnNumber;
+using TransactionID = uint64_t;
 
 using std::string;
+
+struct DirtyReadBufferContext {
+  bool *is_dirty_read;
+  bool *found_dirty;
+  SequenceNumber seq;
+  TransactionID txn_id;
+};
 
 class DirtyBuffer {
  public:
@@ -48,11 +44,15 @@ class DirtyBuffer {
 
   ~DirtyBuffer();
 
-  Status Put(string& key, string& value, SequenceNumber seq, TxnNumber txn_id);
+  Status Put(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id);
+
+  Status GetDirty(const Slice& key, std::string* value, DirtyReadBufferContext* context);
+
+  mutable port::RWMutex map_mutex_;
 
  private:
   uint32_t column_family_id_;
-  std::unordered_map<string, std::shared_ptr<DirtyVersion>> map;
+  std::unordered_map<string, std::unique_ptr<DirtyVersion>> map;
 
   // No copying allowed
   DirtyBuffer(const DirtyBuffer&);
@@ -62,16 +62,22 @@ class DirtyBuffer {
 class DirtyVersion {
  public:
 
-  explicit DirtyVersion(string& key, string& value, SequenceNumber seq, TxnNumber txn_id);
+  explicit DirtyVersion(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id);
 
   ~DirtyVersion();
 
+  inline Slice GetValue() { return value_; };
+
+  inline SequenceNumber GetSeq() { return seq_; };
+
+  inline TransactionID GetTxnId() { return txn_id_; };
+
  private:
 
-  string& key_;
-  string& value_;
+  Slice key_;
+  Slice value_;
   SequenceNumber seq_;
-  TxnNumber txn_id_;
+  TransactionID txn_id_;
 
   // No copying allowed
   DirtyVersion(const DirtyVersion&);

@@ -19,17 +19,20 @@
 
 namespace rocksdb {
 
+using TransactionID = uint64_t;
+
 struct TransactionKeyMapInfo {
   // Earliest sequence number that is relevant to this transaction for this key
   SequenceNumber seq;
+  TransactionID txn_id_;
 
   uint32_t num_writes;
   uint32_t num_reads;
 
   bool exclusive;
 
-  explicit TransactionKeyMapInfo(SequenceNumber seq_no)
-      : seq(seq_no), num_writes(0), num_reads(0), exclusive(false) {}
+  explicit TransactionKeyMapInfo(SequenceNumber seq_no, TransactionID txn_id = 0)
+      : seq(seq_no), txn_id_(txn_id), num_writes(0), num_reads(0), exclusive(false) {}
 };
 
 using TransactionKeyMap =

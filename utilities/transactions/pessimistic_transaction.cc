@@ -29,19 +29,12 @@ namespace rocksdb {
 
 struct WriteOptions;
 
-std::atomic<TransactionID> PessimisticTransaction::txn_id_counter_(1);
-
-TransactionID PessimisticTransaction::GenTxnID() {
-  return txn_id_counter_.fetch_add(1);
-}
-
 PessimisticTransaction::PessimisticTransaction(
     TransactionDB* txn_db, const WriteOptions& write_options,
     const TransactionOptions& txn_options)
     : TransactionBaseImpl(txn_db->GetRootDB(), write_options),
       txn_db_impl_(nullptr),
       expiration_time_(0),
-      txn_id_(0),
       waiting_cf_id_(0),
       waiting_key_(nullptr),
       lock_timeout_(0),
@@ -54,8 +47,6 @@ PessimisticTransaction::PessimisticTransaction(
 }
 
 void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
-  txn_id_ = GenTxnID();
-
   txn_state_ = STARTED;
 
   deadlock_detect_ = txn_options.deadlock_detect;
@@ -80,7 +71,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
   }
 
   if (expiration_time_ > 0) {
-    txn_db_impl_->InsertExpirableTransaction(txn_id_, this);
+    txn_db_impl_->InsertExpirableTransaction(GetID(), this);
   }
   use_only_the_last_commit_time_batch_for_recovery_ =
       txn_options.use_only_the_last_commit_time_batch_for_recovery;
@@ -89,7 +80,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 PessimisticTransaction::~PessimisticTransaction() {
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
   if (expiration_time_ > 0) {
-    txn_db_impl_->RemoveExpirableTransaction(txn_id_);
+    txn_db_impl_->RemoveExpirableTransaction(GetID());
   }
   if (!name_.empty() && txn_state_ != COMMITED) {
     txn_db_impl_->UnregisterTransaction(this);

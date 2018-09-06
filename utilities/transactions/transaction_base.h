@@ -20,8 +20,11 @@
 #include "rocksdb/utilities/transaction_db.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
 #include "utilities/transactions/transaction_util.h"
+#include "db/dirty_buffer.h"
 
 namespace rocksdb {
+
+struct DirtyReadBufferContext;
 
 class TransactionBaseImpl : public Transaction {
  public:
@@ -236,6 +239,11 @@ class TransactionBaseImpl : public Transaction {
 
   WriteBatch* GetCommitTimeWriteBatch() override;
 
+  TransactionID GetID() const override { return txn_id_; }
+
+  // Generate a new unique transaction identifier
+  static TransactionID GenTxnID();
+
  protected:
   // Add a key to the list of tracked keys.
   //
@@ -331,6 +339,12 @@ class TransactionBaseImpl : public Transaction {
   // SetSnapshotOnNextOperation() has been called and the caller would like
   // a notification through the TransactionNotifier interface
   std::shared_ptr<TransactionNotifier> snapshot_notifier_ = nullptr;
+
+  // Used to create unique ids for transactions.
+  static std::atomic<TransactionID> txn_id_counter_;
+
+  // Unique ID for this transaction
+  TransactionID txn_id_;
 
   Status TryLock(ColumnFamilyHandle* column_family, const SliceParts& key,
                  bool read_only, bool exclusive, bool skip_validate = false);

@@ -16,6 +16,8 @@
 
 namespace rocksdb {
 
+std::atomic<TransactionID> TransactionBaseImpl::txn_id_counter_(1);
+
 TransactionBaseImpl::TransactionBaseImpl(DB* db,
                                          const WriteOptions& write_options)
     : db_(db),
@@ -30,6 +32,7 @@ TransactionBaseImpl::TransactionBaseImpl(DB* db,
   if (dbimpl_->allow_2pc()) {
     WriteBatchInternal::InsertNoop(write_batch_.GetWriteBatch());
   }
+  txn_id_ = GenTxnID();
 }
 
 TransactionBaseImpl::~TransactionBaseImpl() {
@@ -195,6 +198,28 @@ Status TransactionBaseImpl::Get(const ReadOptions& read_options,
 Status TransactionBaseImpl::Get(const ReadOptions& read_options,
                                 ColumnFamilyHandle* column_family,
                                 const Slice& key, PinnableSlice* pinnable_val) {
+  DirtyReadBufferContext context;
+  bool is_dirty_read = true;
+  bool found_dirty = false;
+  context.is_dirty_read = &is_dirty_read;
+  context.found_dirty = &found_dirty;
+  context.seq = 0;
+  context.txn_id = 0;
+
+  if (is_dirty_read) {
+    std::string &buffer_value = *pinnable_val->GetSelf();
+    Status s = write_batch_.GetFromBatch(column_family, dbimpl_->initial_db_options_, key, &buffer_value);
+    if (s.ok()) {
+      return s;
+    }
+
+    s = dbimpl_->GetDirty(column_family, key, &buffer_value, &context);
+    if (s.ok() && is_dirty_read && found_dirty) {
+      pinnable_val->PinSelf();
+      return s;
+    }
+  }
+
   return write_batch_.GetFromBatchAndDB(db_, read_options, column_family, key,
                                         pinnable_val);
 }
@@ -307,7 +332,7 @@ Status TransactionBaseImpl::Put(ColumnFamilyHandle* column_family,
       seq = db_->GetLatestSequenceNumber();
     }
 
-    s = dbimpl_->WriteDirty(column_family, key, value, seq, 0); // TODO TXN id
+    s = dbimpl_->WriteDirty(column_family, key, value, seq, GetID());
   }
 
   return s;
@@ -332,7 +357,7 @@ Status TransactionBaseImpl::Put(ColumnFamilyHandle* column_family,
       seq = db_->GetLatestSequenceNumber();
     }
 
-    s = dbimpl_->WriteDirty(column_family, key, value, seq, 0); // TODO TXN id
+    s = dbimpl_->WriteDirty(column_family, key, value, seq, GetID());
   }
 
   return s;
@@ -739,6 +764,11 @@ Status TransactionBaseImpl::RebuildFromWriteBatch(WriteBatch* src_batch) {
 WriteBatch* TransactionBaseImpl::GetCommitTimeWriteBatch() {
   return &commit_time_batch_;
 }
+
+TransactionID TransactionBaseImpl::GenTxnID() {
+  return txn_id_counter_.fetch_add(1);
+}
+
 }  // namespace rocksdb
 
 #endif  // ROCKSDB_LITE

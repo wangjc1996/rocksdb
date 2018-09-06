@@ -9,35 +9,6 @@
 
 #include "db/dirty_buffer.h"
 
-//#include <algorithm>
-//#include <limits>
-//#include <memory>
-//
-//#include "db/dbformat.h"
-//#include "db/merge_context.h"
-//#include "db/merge_helper.h"
-//#include "db/pinned_iterators_manager.h"
-//#include "db/read_callback.h"
-//#include "monitoring/perf_context_imp.h"
-//#include "monitoring/statistics.h"
-//#include "port/port.h"
-//#include "rocksdb/comparator.h"
-//#include "rocksdb/env.h"
-//#include "rocksdb/iterator.h"
-//#include "rocksdb/merge_operator.h"
-//#include "rocksdb/slice_transform.h"
-//#include "rocksdb/write_buffer_manager.h"
-//#include "table/internal_iterator.h"
-//#include "table/iterator_wrapper.h"
-//#include "table/merging_iterator.h"
-//#include "util/arena.h"
-//#include "util/autovector.h"
-//#include "util/coding.h"
-//#include "util/memory_usage.h"
-//#include "util/murmurhash.h"
-//#include "util/mutexlock.h"
-//#include "util/util.h"
-
 namespace rocksdb {
 
 
@@ -50,14 +21,28 @@ namespace rocksdb {
 
   }
 
-  Status DirtyBuffer::Put(string& key, string& value, SequenceNumber seq, TxnNumber txn_id) {
-    std::shared_ptr<DirtyVersion> insert_item(new DirtyVersion(key, value, seq, txn_id));
-    map.insert({key, insert_item});
+  Status DirtyBuffer::Put(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id) {
+    WriteLock wl(&map_mutex_);
+    map[key.ToString()] = std::unique_ptr<DirtyVersion>(new DirtyVersion(key, value, seq, txn_id));
     return Status::OK();
   }
 
-  DirtyVersion::DirtyVersion(string& key, string& value, SequenceNumber seq, TxnNumber txn_id)
-      : key_(key),value_(value), seq_(seq), txn_id_(txn_id) {
+  Status DirtyBuffer::GetDirty(const Slice &key, std::string *value, DirtyReadBufferContext *context) {
+    ReadLock rl(&map_mutex_);
+    if (map.find(key.ToString()) != map.end()) {
+      *(context->found_dirty) = true;
+      DirtyVersion* dirty = map.at(key.ToString()).get();
+      Slice stored_value = dirty->GetValue();
+      value->assign(stored_value.data(), stored_value.size());
+      context->seq = dirty->GetSeq();
+      context->txn_id = dirty->GetTxnId();
+      return Status::OK();
+    }
+    return Status::NotFound();
+  }
+
+  DirtyVersion::DirtyVersion(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id)
+    : key_(key), value_(value), seq_(seq), txn_id_(txn_id){
 
   }
 

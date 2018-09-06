@@ -60,11 +60,6 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   Status SetName(const TransactionName& name) override;
 
-  // Generate a new unique transaction identifier
-  static TransactionID GenTxnID();
-
-  TransactionID GetID() const override { return txn_id_; }
-
   std::vector<TransactionID> GetWaitingTxns(uint32_t* column_family_id,
                                             std::string* key) const override {
     std::lock_guard<std::mutex> lock(wait_mutex_);
@@ -149,11 +144,6 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
  private:
   friend class TransactionTest_ValidateSnapshotTest_Test;
-  // Used to create unique ids for transactions.
-  static std::atomic<TransactionID> txn_id_counter_;
-
-  // Unique ID for this transaction
-  TransactionID txn_id_;
 
   // IDs for the transactions that are blocking the current transaction.
   //
