@@ -78,6 +78,11 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
+  // Dirty buffer gc if the transaction aborts without reaching Commit() or Rollback()
+  if (txn_db_impl_->GetTransactionSate(GetID()) == TransactionStateInMap::IN_PROGRESS) {
+    RemoveFromDirtyBuffer();
+    txn_db_impl_->SetTransactionSate(GetID(), TransactionStateInMap::ABORT);
+  }
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
   if (expiration_time_ > 0) {
     txn_db_impl_->RemoveExpirableTransaction(GetID());
@@ -142,8 +147,12 @@ Status PessimisticTransaction::CommitBatch(WriteBatch* batch) {
   if (can_commit) {
     txn_state_.store(AWAITING_COMMIT);
     s = CommitBatchInternal(batch);
+    RemoveFromDirtyBuffer();
     if (s.ok()) {
+      txn_db_impl_->SetTransactionSate(GetID(), TransactionStateInMap::COMMIT);
       txn_state_.store(COMMITED);
+    } else {
+      txn_db_impl_->SetTransactionSate(GetID(), TransactionStateInMap::ABORT);
     }
   } else if (txn_state_ == LOCKS_STOLEN) {
     s = Status::Expired();
@@ -272,8 +281,12 @@ Status PessimisticTransaction::Commit() {
         txn_db_impl_->UnregisterTransaction(this);
       }
       Clear();
+      RemoveFromDirtyBuffer();
       if (s.ok()) {
+        txn_db_impl_->SetTransactionSate(GetID(), TransactionStateInMap::COMMIT);
         txn_state_.store(COMMITED);
+      } else {
+        txn_db_impl_->SetTransactionSate(GetID(), TransactionStateInMap::ABORT);
       }
     }
   } else if (commit_prepared) {
@@ -281,7 +294,9 @@ Status PessimisticTransaction::Commit() {
 
     s = CommitInternal();
 
+    RemoveFromDirtyBuffer();
     if (!s.ok()) {
+      txn_db_impl_->SetTransactionSate(GetID(), TransactionStateInMap::ABORT);
       ROCKS_LOG_WARN(db_impl_->immutable_db_options().info_log,
                      "Commit write failed");
       return s;
@@ -296,6 +311,7 @@ Status PessimisticTransaction::Commit() {
     txn_db_impl_->UnregisterTransaction(this);
 
     Clear();
+    txn_db_impl_->SetTransactionSate(GetID(), TransactionStateInMap::COMMIT);
     txn_state_.store(COMMITED);
   } else if (txn_state_ == LOCKS_STOLEN) {
     s = Status::Expired();
@@ -374,6 +390,8 @@ Status PessimisticTransaction::Rollback() {
         "Two phase transaction is not in state for rollback.");
   }
 
+  RemoveFromDirtyBuffer();
+  txn_db_impl_->SetTransactionSate(GetID(), TransactionStateInMap::ABORT);
   return s;
 }
 

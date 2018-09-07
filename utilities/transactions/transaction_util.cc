@@ -166,10 +166,13 @@ void TransactionUtil::SetTransactionSate(TransactionStateMap &state_map, std::mu
   bool first_bit = state_map[txn_id * 2];
   bool second_bit = state_map[txn_id * 2 + 1];
 
-  assert(!(first_bit || second_bit));
   if (state == TransactionStateInMap::COMMIT) {
+    //current state is valid and is not ABORT
+    assert(!(first_bit || second_bit) && !(!first_bit && second_bit));
     state_map.set(txn_id * 2);
   } else if (state == TransactionStateInMap::ABORT) {
+    //current state is valid and is not COMMIT
+    assert(!(first_bit || second_bit) && !(first_bit && !second_bit));
     state_map.set(txn_id * 2 + 1);
   }
 }
