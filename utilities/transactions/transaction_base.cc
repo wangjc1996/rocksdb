@@ -36,6 +36,8 @@ TransactionBaseImpl::TransactionBaseImpl(DB* db,
 }
 
 TransactionBaseImpl::~TransactionBaseImpl() {
+  // Dirty buffer gc
+  RemoveFromDirtyBuffer();
   // Release snapshot if snapshot is set
   SetSnapshotInternal(nullptr);
 }
