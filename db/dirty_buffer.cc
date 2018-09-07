@@ -23,15 +23,16 @@ namespace rocksdb {
 
   Status DirtyBuffer::Put(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id) {
     WriteLock wl(&map_mutex_);
-    map[key.ToString()] = std::unique_ptr<DirtyVersion>(new DirtyVersion(key, value, seq, txn_id));
+    map[key.ToString()] = new DirtyVersion(key, value, seq, txn_id);
     return Status::OK();
   }
 
   Status DirtyBuffer::GetDirty(const Slice &key, std::string *value, DirtyReadBufferContext *context) {
     ReadLock rl(&map_mutex_);
-    if (map.find(key.ToString()) != map.end()) {
+    auto it = map.find(key.ToString());
+    if (it != map.end()) {
       *(context->found_dirty) = true;
-      DirtyVersion* dirty = map.at(key.ToString()).get();
+      DirtyVersion* dirty = it->second;
       Slice stored_value = dirty->GetValue();
       value->assign(stored_value.data(), stored_value.size());
       context->seq = dirty->GetSeq();
@@ -39,6 +40,23 @@ namespace rocksdb {
       return Status::OK();
     }
     return Status::NotFound();
+  }
+
+  Status DirtyBuffer::Remove(const std::unordered_set<string>* keys, TransactionID txn_id) {
+    WriteLock rl(&map_mutex_);
+    const std::unordered_set<string> key_set = *keys;
+    for (auto set_it = key_set.begin(); set_it != key_set.end(); set_it++) {
+      string key = *set_it;
+      auto it = map.find(key);
+      if (it != map.end()) {
+        DirtyVersion* dirty = it->second;
+        TransactionID stored_txn_id = dirty->GetTxnId();
+        if (stored_txn_id == txn_id) {
+          map.erase(it);
+        }
+      }
+    }
+    return Status::OK();
   }
 
   DirtyVersion::DirtyVersion(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id)

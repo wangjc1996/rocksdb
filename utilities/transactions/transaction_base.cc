@@ -350,6 +350,7 @@ Status TransactionBaseImpl::Put(ColumnFamilyHandle* column_family,
       seq = db_->GetLatestSequenceNumber();
     }
 
+    AddKeyToWriteSet(column_family, key.ToString());
     s = dbimpl_->WriteDirty(column_family, key, value, seq, GetID());
   }
 
@@ -375,6 +376,9 @@ Status TransactionBaseImpl::Put(ColumnFamilyHandle* column_family,
       seq = db_->GetLatestSequenceNumber();
     }
 
+    std::string key_buf;
+    Slice key_slice(key, &key_buf);
+    AddKeyToWriteSet(column_family, key_slice.ToString());
     s = dbimpl_->WriteDirty(column_family, key, value, seq, GetID());
   }
 
@@ -819,6 +823,31 @@ WriteBatch* TransactionBaseImpl::GetCommitTimeWriteBatch() {
 
 TransactionID TransactionBaseImpl::GenTxnID() {
   return txn_id_counter_.fetch_add(1);
+}
+
+Status TransactionBaseImpl::RemoveFromDirtyBuffer() {
+  Status s;
+  for (auto it = write_set.begin(); it != write_set.end(); it++) {
+    s = dbimpl_->RemoveDirty(it->first, &it->second, GetID());
+    if (!s.ok()) {
+      return s;
+    }
+  }
+  return s;
+}
+
+void TransactionBaseImpl::AddKeyToWriteSet(ColumnFamilyHandle* column_family, string key) {
+  uint32_t id = 0;
+  if (column_family != nullptr) {
+    id = column_family->GetID();
+  }
+  auto it = write_set.find(id);
+  if (it != write_set.end()) {
+    std::unordered_set<string>* key_set = &it->second;
+    (*key_set).insert({key});
+  } else {
+    write_set[id] = {key};
+  }
 }
 
 }  // namespace rocksdb

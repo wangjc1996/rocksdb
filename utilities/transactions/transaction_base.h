@@ -10,6 +10,7 @@
 #include <stack>
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 #include "rocksdb/db.h"
 #include "rocksdb/slice.h"
@@ -244,6 +245,8 @@ class TransactionBaseImpl : public Transaction {
   // Generate a new unique transaction identifier
   static TransactionID GenTxnID();
 
+  Status RemoveFromDirtyBuffer();
+
  protected:
   // Add a key to the list of tracked keys.
   //
@@ -337,6 +340,9 @@ class TransactionBaseImpl : public Transaction {
   // transaction.
   TransactionKeyMap dirty_read_keys_;
 
+  // Map from column_family_id to each column family's write set
+  std::unordered_map<uint32_t,std::unordered_set<string>> write_set;
+
   // If true, future Put/Merge/Deletes will be indexed in the
   // WriteBatchWithIndex.
   // If false, future Put/Merge/Deletes will be inserted directly into the
@@ -362,6 +368,8 @@ class TransactionBaseImpl : public Transaction {
 
   WriteBatchBase* GetBatchForWrite();
   void SetSnapshotInternal(const Snapshot* snapshot);
+
+  void AddKeyToWriteSet(ColumnFamilyHandle* column_family, string key);
 };
 
 }  // namespace rocksdb

@@ -63,6 +63,7 @@ Status OptimisticTransaction::Commit() {
   Status s = db_impl->WriteWithCallback(
       write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
 
+  RemoveFromDirtyBuffer();
   if (s.ok()) {
     Clear();
   }
@@ -71,6 +72,7 @@ Status OptimisticTransaction::Commit() {
 }
 
 Status OptimisticTransaction::Rollback() {
+  RemoveFromDirtyBuffer();
   Clear();
   return Status::OK();
 }

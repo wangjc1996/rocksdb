@@ -9,13 +9,10 @@
 
 #pragma once
 #include <atomic>
-#include <deque>
-#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <vector>
-#include <string>
+#include <unordered_set>
 
 #include "db/dbformat.h"
 #include "port/port_posix.h"
@@ -48,11 +45,13 @@ class DirtyBuffer {
 
   Status GetDirty(const Slice& key, std::string* value, DirtyReadBufferContext* context);
 
+  Status Remove(const std::unordered_set<string>* keys, TransactionID txn_id);
+
   mutable port::RWMutex map_mutex_;
 
  private:
   uint32_t column_family_id_;
-  std::unordered_map<string, std::unique_ptr<DirtyVersion>> map;
+  std::unordered_map<string, DirtyVersion*> map;
 
   // No copying allowed
   DirtyBuffer(const DirtyBuffer&);

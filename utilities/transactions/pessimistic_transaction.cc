@@ -271,6 +271,7 @@ Status PessimisticTransaction::Commit() {
       if (!name_.empty()) {
         txn_db_impl_->UnregisterTransaction(this);
       }
+      RemoveFromDirtyBuffer();
       Clear();
       if (s.ok()) {
         txn_state_.store(COMMITED);
@@ -344,6 +345,7 @@ Status PessimisticTransaction::Rollback() {
   if (txn_state_ == PREPARED) {
     txn_state_.store(AWAITING_ROLLBACK);
 
+    RemoveFromDirtyBuffer();
     s = RollbackInternal();
 
     if (s.ok()) {
@@ -358,6 +360,7 @@ Status PessimisticTransaction::Rollback() {
     if (log_number_ > 0) {
       assert(txn_db_impl_->GetTxnDBOptions().write_policy == WRITE_UNPREPARED);
       assert(GetId() > 0);
+      RemoveFromDirtyBuffer();
       s = RollbackInternal();
 
       if (s.ok()) {
