@@ -160,6 +160,36 @@ Status TransactionUtil::CheckKeysForConflicts(DBImpl* db_impl,
   return result;
 }
 
+void TransactionUtil::SetTransactionSate(TransactionStateMap &state_map, std::mutex* mutex, TransactionID txn_id, TransactionStateInMap state) {
+  std::lock_guard<std::mutex> lock(*mutex);
+
+  bool first_bit = state_map[txn_id * 2];
+  bool second_bit = state_map[txn_id * 2 + 1];
+
+  assert(!(first_bit || second_bit));
+  if (state == TransactionStateInMap::COMMIT) {
+    state_map.set(txn_id * 2);
+  } else if (state == TransactionStateInMap::ABORT) {
+    state_map.set(txn_id * 2 + 1);
+  }
+}
+
+  TransactionStateInMap TransactionUtil::GetTransactionSate(const TransactionStateMap &state_map, std::mutex* mutex, TransactionID txn_id) {
+  std::lock_guard<std::mutex> lock(*mutex);
+
+  bool first_bit = state_map[txn_id * 2];
+  bool second_bit = state_map[txn_id * 2 + 1];
+
+  if (first_bit && second_bit) {
+    assert(false);
+  } else if (!first_bit && second_bit) {
+    return TransactionStateInMap::ABORT;
+  } else if (first_bit && !second_bit) {
+    return TransactionStateInMap::COMMIT;
+  } else {
+    return TransactionStateInMap::IN_PROGRESS;
+  }
+}
 
 }  // namespace rocksdb
 

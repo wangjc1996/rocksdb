@@ -9,6 +9,8 @@
 
 #include <string>
 #include <unordered_map>
+#include <mutex>
+#include <bitset>
 
 #include "db/read_callback.h"
 
@@ -20,6 +22,14 @@
 namespace rocksdb {
 
 using TransactionID = uint64_t;
+
+using TransactionStateMap = std::bitset<1 << 16>;
+
+enum TransactionStateInMap {
+  IN_PROGRESS = 0, //00
+  COMMIT = 1, //10
+  ABORT = 2, //01
+};
 
 struct TransactionKeyMapInfo {
   // Earliest sequence number that is relevant to this transaction for this key
@@ -72,6 +82,10 @@ class TransactionUtil {
   static Status CheckKeysForConflicts(DBImpl* db_impl,
                                       const TransactionKeyMap& keys,
                                       bool cache_only);
+
+  static void SetTransactionSate(TransactionStateMap& state_map, std::mutex* mutex, TransactionID txn_id, TransactionStateInMap state);
+
+  static TransactionStateInMap GetTransactionSate(const TransactionStateMap& state_map, std::mutex* mutex, TransactionID txn_id);
 
  private:
   static Status CheckKey(DBImpl* db_impl, SuperVersion* sv,

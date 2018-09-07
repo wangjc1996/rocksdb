@@ -609,5 +609,13 @@ void PessimisticTransactionDB::UnregisterTransaction(Transaction* txn) {
   transactions_.erase(it);
 }
 
+void PessimisticTransactionDB::SetTransactionSate(TransactionID txn_id, TransactionStateInMap state) {
+  TransactionUtil::SetTransactionSate(transaction_state_map_, &state_map_mutex_, txn_id, state);
+}
+
+TransactionStateInMap PessimisticTransactionDB::GetTransactionSate(TransactionID txn_id) {
+  return TransactionUtil::GetTransactionSate(transaction_state_map_, &state_map_mutex_, txn_id);
+}
+
 }  //  namespace rocksdb
 #endif  // ROCKSDB_LITE

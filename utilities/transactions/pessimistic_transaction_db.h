@@ -122,6 +122,9 @@ class PessimisticTransactionDB : public TransactionDB {
   virtual void UpdateCFComparatorMap(const std::vector<ColumnFamilyHandle*>&) {}
   virtual void UpdateCFComparatorMap(ColumnFamilyHandle*) {}
 
+  void SetTransactionSate(TransactionID txn_id, TransactionStateInMap state);
+  TransactionStateInMap GetTransactionSate(TransactionID txn_id);
+
  protected:
   DBImpl* db_impl_;
   std::shared_ptr<Logger> info_log_;
@@ -161,6 +164,10 @@ class PessimisticTransactionDB : public TransactionDB {
   // map from name to two phase transaction instance
   std::mutex name_map_mutex_;
   std::unordered_map<TransactionName, Transaction*> transactions_;
+
+  // Bitmap of all transaction states
+  std::mutex state_map_mutex_;
+  TransactionStateMap transaction_state_map_;
 
   // Signal that we are testing a crash scenario. Some asserts could be relaxed
   // in such cases.
