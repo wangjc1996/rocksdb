@@ -177,7 +177,7 @@ void TransactionUtil::SetTransactionSate(TransactionStateMap &state_map, std::mu
   }
 }
 
-  TransactionStateInMap TransactionUtil::GetTransactionSate(const TransactionStateMap &state_map, std::mutex* mutex, TransactionID txn_id) {
+TransactionStateInMap TransactionUtil::GetTransactionSate(const TransactionStateMap &state_map, std::mutex* mutex, TransactionID txn_id) {
   std::lock_guard<std::mutex> lock(*mutex);
 
   bool first_bit = state_map[txn_id * 2];

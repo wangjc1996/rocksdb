@@ -23,7 +23,15 @@ namespace rocksdb {
 
   Status DirtyBuffer::Put(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id) {
     WriteLock wl(&map_mutex_);
-    map[key.ToString()] = new DirtyVersion(key, value, seq, txn_id);
+    auto* current = new DirtyVersion(key, value, seq, txn_id);
+    auto* header = map[key.ToString()];
+    if (header == nullptr) {
+      map[key.ToString()] = current;
+    } else {
+      current->link_older = header;
+      header->link_newer = current;
+      map[key.ToString()] = current;
+    }
     return Status::OK();
   }
 
@@ -50,10 +58,38 @@ namespace rocksdb {
       auto it = map.find(key);
       if (it != map.end()) {
         DirtyVersion* dirty = it->second;
-        TransactionID stored_txn_id = dirty->GetTxnId();
-        if (stored_txn_id == txn_id) {
-          map.erase(it);
+        while (dirty != nullptr) {
+          TransactionID stored_txn_id = dirty->GetTxnId();
+          if (stored_txn_id != txn_id) {
+            dirty = dirty->link_older;
+            continue;
+          }
+          if (dirty->link_newer == nullptr) {
+            //head of the linked list
+            auto* new_header = dirty->link_older;
+            if (new_header == nullptr) {
+              map.erase(it);
+              break;
+            } else {
+              map[key] = new_header;
+              new_header->link_newer = nullptr;
+            }
+          } else if (dirty->link_older == nullptr) {
+            //end of the linked list, not single item in the linked list
+            auto* former = dirty->link_newer;
+            former->link_older = nullptr;
+            dirty->link_newer = nullptr;
+          } else {
+            //middle of the linked list
+            auto* former = dirty->link_newer;
+            auto* latter = dirty->link_older;
+            former->link_older = latter;
+            latter->link_newer = former;
+          }
+          dirty = dirty->link_older;
         }
+      } else {
+        assert(false);
       }
     }
     return Status::OK();

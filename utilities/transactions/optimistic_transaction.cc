@@ -66,12 +66,14 @@ Status OptimisticTransaction::Commit() {
   if (s.ok()) {
     Clear();
   }
+  RemoveFromDirtyBuffer();
 
   return s;
 }
 
 Status OptimisticTransaction::Rollback() {
   Clear();
+  RemoveFromDirtyBuffer();
   return Status::OK();
 }
 

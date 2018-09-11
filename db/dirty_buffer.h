@@ -73,10 +73,15 @@ class DirtyVersion {
 
  private:
 
+  friend class DirtyBuffer;
+
   Slice key_;
   Slice value_;
   SequenceNumber seq_;
   TransactionID txn_id_;
+
+  DirtyVersion* link_older = nullptr;
+  DirtyVersion* link_newer = nullptr;
 
   // No copying allowed
   DirtyVersion(const DirtyVersion&);
