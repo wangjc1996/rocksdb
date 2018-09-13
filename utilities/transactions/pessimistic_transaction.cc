@@ -580,13 +580,13 @@ Status PessimisticTransaction::TryRealLock(ColumnFamilyHandle* column_family,
     }
   }
 
-  if (s.ok()) {
-    // We must track all the locked keys so that we can unlock them later. If
-    // the key is already locked, this func will update some stats on the
-    // tracked key. It could also update the tracked_at_seq if it is lower than
-    // the existing trackey seq.
-    TrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
-  }
+//  if (s.ok()) {
+//    // We must track all the locked keys so that we can unlock them later. If
+//    // the key is already locked, this func will update some stats on the
+//    // tracked key. It could also update the tracked_at_seq if it is lower than
+//    // the existing trackey seq.
+//    TrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
+//  }
 
   return s;
 }
@@ -712,7 +712,7 @@ Status PessimisticTransaction::LockAll() {
       const auto& key = key_iter.first;
 
       Status s =
-          TryLock(nullptr, key, false /* read_only */, true /* exclusive */);
+          TryRealLock(nullptr, key, false /* read_only */, true /* exclusive */);
 
       if (!result.ok()) {
         break;
