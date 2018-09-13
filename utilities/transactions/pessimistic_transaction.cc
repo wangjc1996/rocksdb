@@ -320,7 +320,16 @@ Status PessimisticTransaction::Commit() {
 }
 
 Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
-  Status s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+  Status s = LockAll();
+  if (!s.ok()) {
+    return s;
+  }
+  PessimisticTransactionCallback callback(this);
+//  s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+
+  s = db_impl->WriteWithCallback(
+      write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
   return s;
 }
 
@@ -489,7 +498,7 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
 // If check_shapshot is true and this transaction has a snapshot set,
 // this key will only be locked if there have been no writes to this key since
 // the snapshot time.
-Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
+Status PessimisticTransaction::TryRealLock(ColumnFamilyHandle* column_family,
                                        const Slice& key, bool read_only,
                                        bool exclusive, bool skip_validate) {
   uint32_t cfh_id = GetColumnFamilyID(column_family);
@@ -643,6 +652,79 @@ Status PessimisticTransaction::SetName(const TransactionName& name) {
     s = Status::InvalidArgument("Transaction is beyond state for naming.");
   }
   return s;
+}
+
+// Record this key so that we can check it for conflicts at commit time.
+//
+// 'exclusive' is unused for OptimisticTransaction.
+Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
+                                              const Slice& key, bool read_only,
+                                              bool exclusive, bool untracked) {
+    if (untracked) {
+      return Status::OK();
+    }
+    uint32_t cfh_id = GetColumnFamilyID(column_family);
+
+    SetSnapshotIfNeeded();
+
+    SequenceNumber seq;
+    if (snapshot_) {
+      seq = snapshot_->GetSequenceNumber();
+    } else {
+      seq = db_->GetLatestSequenceNumber();
+    }
+
+    std::string key_str = key.ToString();
+
+    TrackKey(cfh_id, key_str, seq, read_only, exclusive);
+
+    // Always return OK. Confilct checking will happen at commit time.
+    return Status::OK();
+}
+
+// Returns OK if it is safe to commit this transaction.  Returns Status::Busy
+// if there are read or write conflicts that would prevent us from committing OR
+// if we can not determine whether there would be any such conflicts.
+//
+// Should only be called on writer thread in order to avoid any race conditions
+// in detecting write conflicts.
+Status PessimisticTransaction::CheckTransactionForConflicts(DB* db) {
+    Status result;
+
+    auto db_impl = static_cast_with_check<DBImpl, DB>(db);
+
+    // Since we are on the write thread and do not want to block other writers,
+    // we will do a cache-only conflict check.  This can result in TryAgain
+    // getting returned if there is not sufficient memtable history to check
+    // for conflicts.
+    return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys(),
+                                                  true /* cache_only */);
+}
+
+Status PessimisticTransaction::LockAll() {
+  const TransactionKeyMap& key_map = GetTrackedKeys();
+  Status result;
+
+  for (auto& key_map_iter : key_map) {
+    const auto& keys = key_map_iter.second;
+
+    for (const auto& key_iter : keys) {
+      const auto& key = key_iter.first;
+
+      Status s =
+          TryLock(nullptr, key, false /* read_only */, true /* exclusive */);
+
+      if (!result.ok()) {
+        break;
+      }
+    }
+
+    if (!result.ok()) {
+      break;
+    }
+  }
+
+  return result;
 }
 
 }  // namespace rocksdb

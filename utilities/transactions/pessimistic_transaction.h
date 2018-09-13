@@ -138,6 +138,12 @@ class PessimisticTransaction : public TransactionBaseImpl {
                  bool read_only, bool exclusive,
                  bool skip_validate = false) override;
 
+  Status TryRealLock(ColumnFamilyHandle* column_family, const Slice& key,
+                 bool read_only, bool exclusive,
+                 bool skip_validate = false);
+
+  Status LockAll();
+
   void Clear() override;
 
   PessimisticTransactionDB* txn_db_impl_;
@@ -148,6 +154,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
   uint64_t expiration_time_;
 
  private:
+  friend class PessimisticTransactionCallback;
   friend class TransactionTest_ValidateSnapshotTest_Test;
   // Used to create unique ids for transactions.
   static std::atomic<TransactionID> txn_id_counter_;
@@ -190,6 +197,13 @@ class PessimisticTransaction : public TransactionBaseImpl {
   void UnlockGetForUpdate(ColumnFamilyHandle* column_family,
                           const Slice& key) override;
 
+  // Returns OK if it is safe to commit this transaction.  Returns Status::Busy
+  // if there are read or write conflicts that would prevent us from committing
+  // OR if we can not determine whether there would be any such conflicts.
+  //
+  // Should only be called on writer thread.
+  Status CheckTransactionForConflicts(DB* db);
+
   // No copying allowed
   PessimisticTransaction(const PessimisticTransaction&);
   void operator=(const PessimisticTransaction&);
@@ -216,6 +230,22 @@ class WriteCommittedTxn : public PessimisticTransaction {
   // No copying allowed
   WriteCommittedTxn(const WriteCommittedTxn&);
   void operator=(const WriteCommittedTxn&);
+};
+
+// Used at commit time to trigger transaction validation
+class PessimisticTransactionCallback : public WriteCallback {
+public:
+  explicit PessimisticTransactionCallback(PessimisticTransaction* txn)
+      : txn_(txn) {}
+
+  Status Callback(DB* db) override {
+    return txn_->CheckTransactionForConflicts(db);
+  }
+
+  bool AllowWriteBatching() override { return true; }
+
+private:
+  PessimisticTransaction* txn_;
 };
 
 }  // namespace rocksdb
