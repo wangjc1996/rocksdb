@@ -718,15 +718,6 @@ Status PessimisticTransaction::LockAll() {
       write_set.push_back(key);
       size++;
 
-      result = TryRealLock(nullptr, key, false /* read_only */, true /* exclusive */);
-
-      if (!result.ok()) {
-        break;
-      }
-    }
-
-    if (!result.ok()) {
-      break;
     }
   }
 
