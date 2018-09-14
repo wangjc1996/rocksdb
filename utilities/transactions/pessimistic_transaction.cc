@@ -87,7 +87,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
-  txn_db_impl_->UnLock(this, &GetTrackedKeys());
+  txn_db_impl_->UnLock(this, &GetLockedKeys());
   if (expiration_time_ > 0) {
     txn_db_impl_->RemoveExpirableTransaction(txn_id_);
   }
@@ -97,7 +97,7 @@ PessimisticTransaction::~PessimisticTransaction() {
 }
 
 void PessimisticTransaction::Clear() {
-  txn_db_impl_->UnLock(this, &GetTrackedKeys());
+  txn_db_impl_->UnLock(this, &GetLockedKeys());
   TransactionBaseImpl::Clear();
 }
 
@@ -510,7 +510,7 @@ Status PessimisticTransaction::TryRealLock(ColumnFamilyHandle* column_family,
   // lock this key if this transactions hasn't already locked it
   SequenceNumber tracked_at_seq = kMaxSequenceNumber;
 
-  const auto& tracked_keys = GetTrackedKeys();
+  const auto& tracked_keys = GetLockedKeys();
   const auto tracked_keys_cf = tracked_keys.find(cfh_id);
   if (tracked_keys_cf == tracked_keys.end()) {
     previously_locked = false;
@@ -585,7 +585,7 @@ Status PessimisticTransaction::TryRealLock(ColumnFamilyHandle* column_family,
     // the key is already locked, this func will update some stats on the
     // tracked key. It could also update the tracked_at_seq if it is lower than
     // the existing trackey seq.
-    TrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
+    TrackLockedKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
   }
 
   return s;

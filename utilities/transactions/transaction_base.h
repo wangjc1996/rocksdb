@@ -221,6 +221,9 @@ class TransactionBaseImpl : public Transaction {
   // with writes in other transactions.
   const TransactionKeyMap& GetTrackedKeys() const { return tracked_keys_; }
 
+  // Get list of keys in this transaction that already locked
+  const TransactionKeyMap& GetLockedKeys() const { return locked_keys_; }
+
   WriteOptions* GetWriteOptions() override { return &write_options_; }
 
   void SetWriteOptions(const WriteOptions& write_options) override {
@@ -242,6 +245,9 @@ class TransactionBaseImpl : public Transaction {
   // seqno is the earliest seqno this key was involved with this transaction.
   // readonly should be set to true if no data was written for this key
   void TrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
+                bool readonly, bool exclusive);
+
+  void TrackLockedKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
                 bool readonly, bool exclusive);
 
   // Helper function to add a key to the given TransactionKeyMap
@@ -317,6 +323,8 @@ class TransactionBaseImpl : public Transaction {
   // For Pessimistic Transactions this is the list of locked keys.
   // Optimistic Transactions will wait till commit time to do conflict checking.
   TransactionKeyMap tracked_keys_;
+
+  TransactionKeyMap locked_keys_;
 
   // If true, future Put/Merge/Deletes will be indexed in the
   // WriteBatchWithIndex.

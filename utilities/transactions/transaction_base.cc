@@ -530,6 +530,20 @@ void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,
   }
 }
 
+
+void TransactionBaseImpl::TrackLockedKey(uint32_t cfh_id, const std::string& key,
+                                     SequenceNumber seq, bool read_only,
+                                     bool exclusive) {
+  // Update map of all tracked keys for this transaction
+  TrackKey(&locked_keys_, cfh_id, key, seq, read_only, exclusive);
+
+  if (save_points_ != nullptr && !save_points_->empty()) {
+    // Update map of tracked keys in this SavePoint
+    TrackKey(&save_points_->top().new_keys_, cfh_id, key, seq, read_only,
+             exclusive);
+  }
+}
+
 // Add a key to the given TransactionKeyMap
 // seq for pessimistic transactions is the sequence number from which we know
 // there has not been a concurrent update to the key.
