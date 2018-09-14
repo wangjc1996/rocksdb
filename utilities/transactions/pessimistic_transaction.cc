@@ -493,8 +493,6 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
   return s;
 }
 
-#define UNUSED(expr)
-
 // Attempt to lock this key.
 // Returns OK if the key has been successfully locked.  Non-ok, otherwise.
 // If check_shapshot is true and this transaction has a snapshot set,
@@ -503,8 +501,6 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
 Status PessimisticTransaction::TryRealLock(ColumnFamilyHandle* column_family,
                                        const Slice& key, bool read_only,
                                        bool exclusive, bool skip_validate) {
-  UNUSED(read_only);
-
   uint32_t cfh_id = GetColumnFamilyID(column_family);
   std::string key_str = key.ToString();
   bool previously_locked;
@@ -584,13 +580,13 @@ Status PessimisticTransaction::TryRealLock(ColumnFamilyHandle* column_family,
     }
   }
 
-//  if (s.ok()) {
-//    // We must track all the locked keys so that we can unlock them later. If
-//    // the key is already locked, this func will update some stats on the
-//    // tracked key. It could also update the tracked_at_seq if it is lower than
-//    // the existing trackey seq.
-//    TrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
-//  }
+  if (s.ok()) {
+    // We must track all the locked keys so that we can unlock them later. If
+    // the key is already locked, this func will update some stats on the
+    // tracked key. It could also update the tracked_at_seq if it is lower than
+    // the existing trackey seq.
+    TrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
+  }
 
   return s;
 }
