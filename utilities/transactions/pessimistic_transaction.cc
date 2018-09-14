@@ -711,8 +711,7 @@ Status PessimisticTransaction::LockAll() {
     for (const auto& key_iter : keys) {
       const auto& key = key_iter.first;
 
-      Status s =
-          TryRealLock(nullptr, key, false /* read_only */, true /* exclusive */);
+      result = TryRealLock(nullptr, key, false /* read_only */, true /* exclusive */);
 
       if (!result.ok()) {
         break;
