@@ -493,6 +493,8 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
   return s;
 }
 
+#define UNUSED(expr)
+
 // Attempt to lock this key.
 // Returns OK if the key has been successfully locked.  Non-ok, otherwise.
 // If check_shapshot is true and this transaction has a snapshot set,
@@ -501,6 +503,8 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
 Status PessimisticTransaction::TryRealLock(ColumnFamilyHandle* column_family,
                                        const Slice& key, bool read_only,
                                        bool exclusive, bool skip_validate) {
+  UNUSED(read_only);
+
   uint32_t cfh_id = GetColumnFamilyID(column_family);
   std::string key_str = key.ToString();
   bool previously_locked;
