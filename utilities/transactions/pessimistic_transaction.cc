@@ -25,6 +25,8 @@
 #include "utilities/transactions/pessimistic_transaction_db.h"
 #include "utilities/transactions/transaction_util.h"
 
+using namespace std;
+
 namespace rocksdb {
 
 struct WriteOptions;
@@ -705,11 +707,16 @@ Status PessimisticTransaction::LockAll() {
   const TransactionKeyMap& key_map = GetTrackedKeys();
   Status result;
 
+  vector<string> write_set;
+  int size = 0;
   for (auto& key_map_iter : key_map) {
     const auto& keys = key_map_iter.second;
 
     for (const auto& key_iter : keys) {
       const auto& key = key_iter.first;
+
+      write_set.push_back(key);
+      size++;
 
       result = TryRealLock(nullptr, key, false /* read_only */, true /* exclusive */);
 
@@ -717,6 +724,18 @@ Status PessimisticTransaction::LockAll() {
         break;
       }
     }
+
+    if (!result.ok()) {
+      break;
+    }
+  }
+
+  sort(write_set.begin(), write_set.end());
+
+  for (int i = 0; i < size; ++i) {
+
+    string key = write_set[i];
+    result = TryRealLock(nullptr, key, false /* read_only */, true /* exclusive */);
 
     if (!result.ok()) {
       break;
