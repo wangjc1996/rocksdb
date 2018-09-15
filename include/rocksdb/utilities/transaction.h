@@ -467,6 +467,14 @@ class Transaction {
   // assigns the id. Although currently it is the case, the id is not guaranteed
   // to remain the same across restarts.
   uint64_t GetId() { return id_; }
+  virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
+               const Slice& value, bool optimistic = false) = 0;
+
+  Status DoPut(const Slice& key,
+               const Slice& value, bool optimistic = false) {
+    return DoPut(nullptr, key, value, optimistic);
+  }
+  
 
  protected:
   explicit Transaction(const TransactionDB* /*db*/) {}
