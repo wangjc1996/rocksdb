@@ -42,6 +42,7 @@ void TransactionBaseImpl::Clear() {
   write_batch_.Clear();
   commit_time_batch_.Clear();
   tracked_keys_.clear();
+  locked_keys_.clear();
   num_puts_ = 0;
   num_deletes_ = 0;
   num_merges_ = 0;
