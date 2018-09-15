@@ -289,6 +289,49 @@ Iterator* TransactionBaseImpl::GetIterator(const ReadOptions& read_options,
   return write_batch_.NewIteratorWithBase(column_family, db_iter);
 }
 
+Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key,
+               bool read_only, bool exclusive, bool untracked) {
+  if (untracked) {
+    return Status::OK();
+  }
+  uint32_t cfh_id = GetColumnFamilyID(column_family);
+
+  SetSnapshotIfNeeded();
+
+  SequenceNumber seq;
+  if (snapshot_) {
+    seq = snapshot_->GetSequenceNumber();
+  } else {
+    seq = db_->GetLatestSequenceNumber();
+  }
+
+  std::string key_str = key.ToString();
+
+  TrackKey(cfh_id, key_str, seq, read_only, exclusive);
+
+  // Always return OK. Confilct checking will happen at commit time.
+  return Status::OK();
+}
+
+Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
+                                const Slice& key, const Slice& value, bool optimistic) {
+  Status s;
+  if (optimistic) {
+    s = DoOptimisticLock(column_family, key, false, true);
+  } else {
+    s = DoPessimisticLock(column_family, key, false, true);
+  }
+
+  if (s.ok()) {
+    s = GetBatchForWrite()->Put(column_family, key, value);
+    if (s.ok()) {
+      num_puts_++;
+    }
+  }
+
+  return s;
+}
+
 Status TransactionBaseImpl::Put(ColumnFamilyHandle* column_family,
                                 const Slice& key, const Slice& value) {
   Status s =

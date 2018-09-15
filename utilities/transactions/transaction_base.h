@@ -239,7 +239,13 @@ class TransactionBaseImpl : public Transaction {
 
   WriteBatch* GetCommitTimeWriteBatch() override;
 
- protected:
+  virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
+               const Slice& value, bool optimistic = false) override;
+
+  protected:
+  Status DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked = false);
+
+  virtual Status DoPessimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked = false) = 0;
   // Add a key to the list of tracked keys.
   //
   // seqno is the earliest seqno this key was involved with this transaction.

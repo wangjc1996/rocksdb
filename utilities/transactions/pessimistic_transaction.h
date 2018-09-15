@@ -113,6 +113,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
   int64_t GetDeadlockDetectDepth() const { return deadlock_detect_depth_; }
 
  protected:
+  Status DoPessimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked = false) override;
   // Refer to
   // TransactionOptions::use_only_the_last_commit_time_batch_for_recovery
   bool use_only_the_last_commit_time_batch_for_recovery_ = false;
@@ -153,10 +154,17 @@ class PessimisticTransaction : public TransactionBaseImpl {
   // microseconds according to Env->NowMicros())
   uint64_t expiration_time_;
 
+  const TransactionKeyMap& GetLockedKeys() const { return locked_keys_; }
+
+
  private:
   friend class PessimisticTransactionCallback;
   friend class TransactionTest_ValidateSnapshotTest_Test;
   // Used to create unique ids for transactions.
+  TransactionKeyMap locked_keys_;
+
+  void TrackLockedKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive);
+
   static std::atomic<TransactionID> txn_id_counter_;
 
   // Unique ID for this transaction
