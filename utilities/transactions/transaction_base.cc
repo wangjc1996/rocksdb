@@ -313,6 +313,32 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
   return Status::OK();
 }
 
+Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, 
+		const Slice& key, std::string* value, bool optimistic) {
+  assert(value != nullptr);
+  PinnableSlice pinnable_val(value);
+  assert(!pinnable_val.IsPinned());
+  
+  auto cf = db_->DefaultColumnFamily();
+
+  Status s;
+  (void)optimistic;
+  if (optimistic) {
+    s = DoOptimisticLock(cf, key, true, false);
+  } else {
+    s = DoPessimisticLock(cf, key, true, false);
+  }
+
+  if (s.ok()) {
+    s = Get(read_options, cf, key, &pinnable_val);
+    if (s.ok() && pinnable_val.IsPinned()) {
+      value->assign(pinnable_val.data(), pinnable_val.size());
+    }  // else value is already assigned
+  }
+
+  return s;
+}
+
 Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
                                 const Slice& key, const Slice& value, bool optimistic) {
   Status s;

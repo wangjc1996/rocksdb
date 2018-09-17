@@ -474,7 +474,8 @@ class Transaction {
                const Slice& value, bool optimistic = false) {
     return DoPut(nullptr, key, value, optimistic);
   }
-  
+
+  virtual Status DoGet(const ReadOptions& options, const Slice& key, std::string* value, bool optimistic = false) = 0; 
 
  protected:
   explicit Transaction(const TransactionDB* /*db*/) {}

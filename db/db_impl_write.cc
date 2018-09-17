@@ -126,6 +126,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
 
   StopWatch write_sw(env_, immutable_db_options_.statistics.get(), DB_WRITE);
 
+  w.CheckCallback(this);
   write_thread_.JoinBatchGroup(&w);
   if (w.state == WriteThread::STATE_PARALLEL_MEMTABLE_WRITER) {
     // we are a non-leader in a parallel group
@@ -240,7 +241,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     size_t valid_batches = 0;
     size_t total_byte_size = 0;
     for (auto* writer : write_group) {
-      if (writer->CheckCallback(this)) {
+      if (!writer->CallbackFailed()) {
         valid_batches += writer->batch_cnt;
         if (writer->ShouldWriteToMemtable()) {
           total_count += WriteBatchInternal::Count(writer->batch);

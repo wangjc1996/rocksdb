@@ -242,6 +242,8 @@ class TransactionBaseImpl : public Transaction {
   virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
                const Slice& value, bool optimistic = false) override;
 
+  virtual Status DoGet(const ReadOptions& options, const Slice& key, std::string* value, bool optimistic = false) override;
+
   protected:
   Status DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked = false);
 
