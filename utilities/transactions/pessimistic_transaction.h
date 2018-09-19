@@ -139,7 +139,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
                  bool read_only, bool exclusive,
                  bool skip_validate = false) override;
 
-  Status LockAll();
+  Status DoLockAll();
 
   void Clear() override;
 

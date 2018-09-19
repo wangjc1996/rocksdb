@@ -688,6 +688,9 @@ test_libs: $(TEST_LIBS)
 # dbg: $(LIBRARY) $(BENCHMARKS) tools $(TESTS)
 dbg: $(LIBRARY)
 
+mixed_test: mixed.cc librocksdb.so
+	c++ $^ -g -o $@ -std=c++11 -pthread ./librocksdb.so
+
 # creates static library and programs
 release:
 	$(MAKE) clean

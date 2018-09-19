@@ -389,7 +389,7 @@ Status PessimisticTransaction::Commit() {
 }
 
 Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
-  Status s = LockAll();
+  Status s = DoLockAll();
 
   if (!s.ok()) {
     return s;
@@ -674,7 +674,7 @@ Status PessimisticTransaction::CheckTransactionForConflicts(DB* db) {
                                                   true /* cache_only */);
 }
 
-Status PessimisticTransaction::LockAll() {
+Status PessimisticTransaction::DoLockAll() {
   // get tracked keys used by occ
   const TransactionKeyMap& key_map = GetWriteKeys();
   std::vector<uint32_t> cfs;
