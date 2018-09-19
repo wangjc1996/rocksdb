@@ -138,7 +138,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
                  bool read_only, bool exclusive,
                  bool skip_validate = false) override;
 
-  Status TryRealLock(ColumnFamilyHandle* column_family, const Slice& key,
+  Status TryRealLock(uint32_t cfh_id, const Slice& key,
                  bool read_only, bool exclusive,
                  bool skip_validate = false);
 

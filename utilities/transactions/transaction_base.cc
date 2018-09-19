@@ -42,7 +42,8 @@ void TransactionBaseImpl::Clear() {
   write_batch_.Clear();
   commit_time_batch_.Clear();
   tracked_keys_.clear();
-  locked_keys_.clear();
+  read_keys_.clear();
+  write_keys_.clear();
   num_puts_ = 0;
   num_deletes_ = 0;
   num_merges_ = 0;
@@ -534,17 +535,13 @@ void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,
   }
 }
 
-
-void TransactionBaseImpl::TrackLockedKey(uint32_t cfh_id, const std::string& key,
-                                     SequenceNumber seq, bool read_only,
-                                     bool exclusive) {
-  // Update map of all tracked keys for this transaction
-  TrackKey(&locked_keys_, cfh_id, key, seq, read_only, exclusive);
-
-  if (save_points_ != nullptr && !save_points_->empty()) {
-    // Update map of tracked keys in this SavePoint
-    TrackKey(&save_points_->top().new_keys_, cfh_id, key, seq, read_only,
-             exclusive);
+void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
+                                       SequenceNumber seq, bool read_only,
+                                       bool exclusive) {
+  if (read_only) {
+    TrackKey(&read_keys_, cfh_id, key, seq, read_only, exclusive);
+  } else {
+    TrackKey(&write_keys_, cfh_id, key, seq, read_only, exclusive);
   }
 }
 

@@ -221,8 +221,9 @@ class TransactionBaseImpl : public Transaction {
   // with writes in other transactions.
   const TransactionKeyMap& GetTrackedKeys() const { return tracked_keys_; }
 
-  // Get list of keys in this transaction that already locked
-  const TransactionKeyMap& GetLockedKeys() const { return locked_keys_; }
+  const TransactionKeyMap& GetReadKeys() const { return read_keys_; }
+
+  const TransactionKeyMap& GetWriteKeys() const { return write_keys_; }
 
   WriteOptions* GetWriteOptions() override { return &write_options_; }
 
@@ -247,8 +248,9 @@ class TransactionBaseImpl : public Transaction {
   void TrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
                 bool readonly, bool exclusive);
 
-  void TrackLockedKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
-                bool readonly, bool exclusive);
+  void DoTrackKey(uint32_t cfh_id, const std::string& key,
+                                       SequenceNumber seq, bool read_only,
+                                       bool exclusive);
 
   // Helper function to add a key to the given TransactionKeyMap
   static void TrackKey(TransactionKeyMap* key_map, uint32_t cfh_id,
@@ -324,7 +326,8 @@ class TransactionBaseImpl : public Transaction {
   // Optimistic Transactions will wait till commit time to do conflict checking.
   TransactionKeyMap tracked_keys_;
 
-  TransactionKeyMap locked_keys_;
+  TransactionKeyMap read_keys_;
+  TransactionKeyMap write_keys_;
 
   // If true, future Put/Merge/Deletes will be indexed in the
   // WriteBatchWithIndex.
