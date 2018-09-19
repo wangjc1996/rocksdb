@@ -87,7 +87,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
-  txn_db_impl_->UnLock(this, &GetLockedKeys());
+  txn_db_impl_->UnLock(this, &GetTrackedKeys());
   if (expiration_time_ > 0) {
     txn_db_impl_->RemoveExpirableTransaction(txn_id_);
   }
@@ -97,15 +97,12 @@ PessimisticTransaction::~PessimisticTransaction() {
 }
 
 void PessimisticTransaction::Clear() {
-  txn_db_impl_->UnLock(this, &GetLockedKeys());
+  txn_db_impl_->UnLock(this, &GetTrackedKeys());
   TransactionBaseImpl::Clear();
-  locked_keys_.clear();
 }
 
 
-Status PessimisticTransaction::DoPessimisticLock(ColumnFamilyHandle* column_family, const Slice& key,
-               bool read_only, bool exclusive, bool skip_validate) {
-  uint32_t cfh_id = GetColumnFamilyID(column_family);
+Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool skip_validate) {
   std::string key_str = key.ToString();
   bool previously_locked;
   bool lock_upgrade = false;
@@ -114,7 +111,7 @@ Status PessimisticTransaction::DoPessimisticLock(ColumnFamilyHandle* column_fami
   // lock this key if this transactions hasn't already locked it
   SequenceNumber tracked_at_seq = kMaxSequenceNumber;
 
-  const auto& tracked_keys = GetLockedKeys();
+  const auto& tracked_keys = GetTrackedKeys();
   const auto tracked_keys_cf = tracked_keys.find(cfh_id);
   if (tracked_keys_cf == tracked_keys.end()) {
     previously_locked = false;
@@ -134,7 +131,7 @@ Status PessimisticTransaction::DoPessimisticLock(ColumnFamilyHandle* column_fami
   // Lock this key if this transactions hasn't already locked it or we require
   // an upgrade.
   if (!previously_locked || lock_upgrade) {
-    s = txn_db_impl_->TryLock(this, cfh_id, key_str, exclusive);
+    s = txn_db_impl_->DoTryLock(this, cfh_id, key_str, exclusive, fail_fast /* optimistic */);
   }
 
   SetSnapshotIfNeeded();
@@ -160,43 +157,17 @@ Status PessimisticTransaction::DoPessimisticLock(ColumnFamilyHandle* column_fami
       // lock, which would be an unusual sequence.
       tracked_at_seq = db_->GetLatestSequenceNumber();
     }
-  } else {
-    // If a snapshot is set, we need to make sure the key hasn't been modified
-    // since the snapshot.  This must be done after we locked the key.
-    // If we already have validated an earilier snapshot it must has been
-    // reflected in tracked_at_seq and ValidateSnapshot will return OK.
-    if (s.ok()) {
-      s = ValidateSnapshot(column_family, key, &tracked_at_seq);
-
-      if (!s.ok()) {
-        // Failed to validate key
-        if (!previously_locked) {
-          // Unlock key we just locked
-          if (lock_upgrade) {
-            s = txn_db_impl_->TryLock(this, cfh_id, key_str,
-                                      false /* exclusive */);
-            assert(s.ok());
-          } else {
-            txn_db_impl_->UnLock(this, cfh_id, key.ToString());
-          }
-        }
-      }
-    }
-  }
+  } 
 
   if (s.ok()) {
     // We must track all the locked keys so that we can unlock them later. If
     // the key is already locked, this func will update some stats on the
     // tracked key. It could also update the tracked_at_seq if it is lower than
     // the existing trackey seq.
-    TrackLockedKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
+    DoTrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive, false /* optimistic */);
   }
 
   return s;
-}
-
-void PessimisticTransaction::TrackLockedKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive) {
-  TrackKey(&locked_keys_, cfh_id, key, seq, read_only, exclusive);
 }
 
 void PessimisticTransaction::Reinitialize(
@@ -593,104 +564,6 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
   return s;
 }
 
-// Attempt to lock this key.
-// Returns OK if the key has been successfully locked.  Non-ok, otherwise.
-// If check_shapshot is true and this transaction has a snapshot set,
-// this key will only be locked if there have been no writes to this key since
-// the snapshot time.
-Status PessimisticTransaction::TryRealLock(ColumnFamilyHandle* column_family,
-                                       const Slice& key, bool read_only,
-                                       bool exclusive, bool skip_validate) {
-  uint32_t cfh_id = GetColumnFamilyID(column_family);
-  std::string key_str = key.ToString();
-  bool previously_locked;
-  bool lock_upgrade = false;
-  Status s;
-
-  // lock this key if this transactions hasn't already locked it
-  SequenceNumber tracked_at_seq = kMaxSequenceNumber;
-
-  const auto& tracked_keys = GetLockedKeys();
-  const auto tracked_keys_cf = tracked_keys.find(cfh_id);
-  if (tracked_keys_cf == tracked_keys.end()) {
-    previously_locked = false;
-  } else {
-    auto iter = tracked_keys_cf->second.find(key_str);
-    if (iter == tracked_keys_cf->second.end()) {
-      previously_locked = false;
-    } else {
-      if (!iter->second.exclusive && exclusive) {
-        lock_upgrade = true;
-      }
-      previously_locked = true;
-      tracked_at_seq = iter->second.seq;
-    }
-  }
-
-  // Lock this key if this transactions hasn't already locked it or we require
-  // an upgrade.
-  if (!previously_locked || lock_upgrade) {
-    s = txn_db_impl_->TryLock(this, cfh_id, key_str, exclusive);
-  }
-
-  SetSnapshotIfNeeded();
-
-  // Even though we do not care about doing conflict checking for this write,
-  // we still need to take a lock to make sure we do not cause a conflict with
-  // some other write.  However, we do not need to check if there have been
-  // any writes since this transaction's snapshot.
-  // TODO(agiardullo): could optimize by supporting shared txn locks in the
-  // future
-  if (skip_validate || snapshot_ == nullptr) {
-    // Need to remember the earliest sequence number that we know that this
-    // key has not been modified after.  This is useful if this same
-    // transaction
-    // later tries to lock this key again.
-    if (tracked_at_seq == kMaxSequenceNumber) {
-      // Since we haven't checked a snapshot, we only know this key has not
-      // been modified since after we locked it.
-      // Note: when last_seq_same_as_publish_seq_==false this is less than the
-      // latest allocated seq but it is ok since i) this is just a heuristic
-      // used only as a hint to avoid actual check for conflicts, ii) this would
-      // cause a false positive only if the snapthot is taken right after the
-      // lock, which would be an unusual sequence.
-      tracked_at_seq = db_->GetLatestSequenceNumber();
-    }
-  } else {
-    // If a snapshot is set, we need to make sure the key hasn't been modified
-    // since the snapshot.  This must be done after we locked the key.
-    // If we already have validated an earilier snapshot it must has been
-    // reflected in tracked_at_seq and ValidateSnapshot will return OK.
-    if (s.ok()) {
-      s = ValidateSnapshot(column_family, key, &tracked_at_seq);
-
-      if (!s.ok()) {
-        // Failed to validate key
-        if (!previously_locked) {
-          // Unlock key we just locked
-          if (lock_upgrade) {
-            s = txn_db_impl_->TryLock(this, cfh_id, key_str,
-                                      false /* exclusive */);
-            assert(s.ok());
-          } else {
-            txn_db_impl_->UnLock(this, cfh_id, key.ToString());
-          }
-        }
-      }
-    }
-  }
-
-  if (s.ok()) {
-    // We must track all the locked keys so that we can unlock them later. If
-    // the key is already locked, this func will update some stats on the
-    // tracked key. It could also update the tracked_at_seq if it is lower than
-    // the existing trackey seq.
-    TrackLockedKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive);
-  }
-
-  return s;
-}
-
 // Return OK() if this key has not been modified more recently than the
 // transaction snapshot_.
 // tracked_at_seq is the global seq at which we either locked the key or already
@@ -797,38 +670,40 @@ Status PessimisticTransaction::CheckTransactionForConflicts(DB* db) {
     // we will do a cache-only conflict check.  This can result in TryAgain
     // getting returned if there is not sufficient memtable history to check
     // for conflicts.
-    return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys(),
+    return TransactionUtil::CheckKeysForConflicts(db_impl, GetReadKeys(),
                                                   true /* cache_only */);
 }
 
 Status PessimisticTransaction::LockAll() {
   // get tracked keys used by occ
-  const TransactionKeyMap& key_map = GetTrackedKeys();
+  const TransactionKeyMap& key_map = GetWriteKeys();
+  std::vector<uint32_t> cfs;
 
-  std::vector<std::string> keys_to_lock;
-  // then lock them all. after that they will reside in
-  // locked_keys_ (DoPessimisticLock will do this)
   for (auto& key_map_iter : key_map) {
-    const auto& keys = key_map_iter.second;
+    const auto& cf = key_map_iter.first;
 
-    for (const auto& key_iter : keys) {
-      const auto& key = key_iter.first;
+    cfs.push_back(cf);
+  }
 
-      keys_to_lock.push_back(key);
+  std::sort(cfs.begin(), cfs.end());
+
+  Status s;
+  for (uint32_t cf : cfs) {
+    const auto& keys_info = key_map.at(cf);
+
+    std::vector<std::string> keys;
+    for (auto& key_info_iter : keys_info) {
+      const auto& key = key_info_iter.first;
+      keys.push_back(key);
+    }
+    std::sort(keys.begin(), keys.end());
+
+    for (const auto& key : keys) {
+      s = DoPessimisticLock(cf, key, false /* read_only */, true /* exclusive */, false /* fail_fast */);
     }
   }
 
-  std::sort(keys_to_lock.begin(), keys_to_lock.end());
-
-  Status result;
-  for (const auto& key : keys_to_lock) {
-    result = DoPessimisticLock(nullptr, key, false, true);
-    if (!result.ok()) {
-      break;
-    }
-  }
-
-  return result;
+  return s;
 }
 
 }  // namespace rocksdb

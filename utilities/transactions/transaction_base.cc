@@ -307,30 +307,32 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
 
   std::string key_str = key.ToString();
 
-  TrackKey(cfh_id, key_str, seq, read_only, exclusive);
+  DoTrackKey(cfh_id, key_str, seq, read_only, exclusive, true /* optimistic */);
 
   // Always return OK. Confilct checking will happen at commit time.
   return Status::OK();
 }
 
-Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, 
+Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyHandle* column_family,
 		const Slice& key, std::string* value, bool optimistic) {
   assert(value != nullptr);
   PinnableSlice pinnable_val(value);
   assert(!pinnable_val.IsPinned());
   
-  auto cf = db_->DefaultColumnFamily();
+  if (column_family == nullptr) {
+    column_family = db_->DefaultColumnFamily();
+  }
 
   Status s;
-  (void)optimistic;
+
   if (optimistic) {
-    s = DoOptimisticLock(cf, key, true, false);
+    s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */);
   } else {
-    s = DoPessimisticLock(cf, key, true, false);
+    s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
   }
 
   if (s.ok()) {
-    s = Get(read_options, cf, key, &pinnable_val);
+    s = Get(read_options, column_family, key, &pinnable_val);
     if (s.ok() && pinnable_val.IsPinned()) {
       value->assign(pinnable_val.data(), pinnable_val.size());
     }  // else value is already assigned
@@ -342,10 +344,11 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options,
 Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
                                 const Slice& key, const Slice& value, bool optimistic) {
   Status s;
+
   if (optimistic) {
-    s = DoOptimisticLock(column_family, key, false, true);
+    s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
   } else {
-    s = DoPessimisticLock(column_family, key, false, true);
+    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
   }
 
   if (s.ok()) {
@@ -586,25 +589,30 @@ uint64_t TransactionBaseImpl::GetNumKeys() const {
   return count;
 }
 
+void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
+                                   SequenceNumber seq, bool read_only,
+                                   bool exclusive, bool optimistic) {
+  if (optimistic) {
+    if (read_only) {
+      TrackKey(&read_keys_, cfh_id, key, seq, read_only, exclusive);
+    } else {
+      TrackKey(&write_keys_, cfh_id, key, seq, read_only, exclusive);
+    }
+  } else {
+    TrackKey(&tracked_keys_, cfh_id, key, seq, read_only, exclusive);
+    if (save_points_ != nullptr && !save_points_->empty()) {
+    // Update map of tracked keys in this SavePoint
+      TrackKey(&save_points_->top().new_keys_, cfh_id, key, seq, read_only,
+               exclusive);
+    }
+  }
+}
+
 void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,
                                    SequenceNumber seq, bool read_only,
                                    bool exclusive) {
   // Update map of all tracked keys for this transaction
   TrackKey(&tracked_keys_, cfh_id, key, seq, read_only, exclusive);
-
-  if (save_points_ != nullptr && !save_points_->empty()) {
-    // Update map of tracked keys in this SavePoint
-    TrackKey(&save_points_->top().new_keys_, cfh_id, key, seq, read_only,
-             exclusive);
-  }
-}
-
-
-void TransactionBaseImpl::TrackLockedKey(uint32_t cfh_id, const std::string& key,
-                                     SequenceNumber seq, bool read_only,
-                                     bool exclusive) {
-  // Update map of all tracked keys for this transaction
-  TrackKey(&locked_keys_, cfh_id, key, seq, read_only, exclusive);
 
   if (save_points_ != nullptr && !save_points_->empty()) {
     // Update map of tracked keys in this SavePoint

@@ -47,13 +47,14 @@ class OptimisticTransaction : public TransactionBaseImpl {
   Status SetName(const TransactionName& name) override;
 
  protected:
-  Status DoPessimisticLock(ColumnFamilyHandle* column_family, const Slice& key,
-                 bool read_only, bool exclusive,
+  Status DoPessimisticLock(uint32_t cfh_id, const Slice& key,
+                 bool read_only, bool exclusive, bool fail_fast,
                  bool untracked = false) override {
-    (void)column_family;
+    (void)cfh_id;
     (void)key;
     (void)read_only;
     (void)exclusive;
+    (void)fail_fast;
     (void)untracked;
     
     return Status::OK();

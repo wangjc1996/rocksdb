@@ -20,6 +20,7 @@
 #include "rocksdb/utilities/transaction_db.h"
 #include "rocksdb/utilities/write_batch_with_index.h"
 #include "utilities/transactions/transaction_util.h"
+#include "db/column_family.h"
 
 namespace rocksdb {
 
@@ -222,7 +223,9 @@ class TransactionBaseImpl : public Transaction {
   const TransactionKeyMap& GetTrackedKeys() const { return tracked_keys_; }
 
   // Get list of keys in this transaction that already locked
-  const TransactionKeyMap& GetLockedKeys() const { return locked_keys_; }
+  const TransactionKeyMap& GetReadKeys() const { return read_keys_; }
+
+  const TransactionKeyMap& GetWriteKeys() const { return write_keys_; }
 
   WriteOptions* GetWriteOptions() override { return &write_options_; }
 
@@ -242,20 +245,23 @@ class TransactionBaseImpl : public Transaction {
   virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
                const Slice& value, bool optimistic = false) override;
 
-  virtual Status DoGet(const ReadOptions& options, const Slice& key, std::string* value, bool optimistic = false) override;
+  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false) override;
 
   protected:
+  void DoTrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive, bool optimistic = false);
+
   Status DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked = false);
 
-  virtual Status DoPessimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked = false) = 0;
+  Status DoPessimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false) {
+  return DoPessimisticLock(GetColumnFamilyID(column_family), key, read_only, exclusive, fail_fast, untracked); 
+}
+
+  virtual Status DoPessimisticLock(uint32_t cf_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false) = 0;
   // Add a key to the list of tracked keys.
   //
   // seqno is the earliest seqno this key was involved with this transaction.
   // readonly should be set to true if no data was written for this key
   void TrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
-                bool readonly, bool exclusive);
-
-  void TrackLockedKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
                 bool readonly, bool exclusive);
 
   // Helper function to add a key to the given TransactionKeyMap
@@ -331,8 +337,8 @@ class TransactionBaseImpl : public Transaction {
   // For Pessimistic Transactions this is the list of locked keys.
   // Optimistic Transactions will wait till commit time to do conflict checking.
   TransactionKeyMap tracked_keys_;
-
-  TransactionKeyMap locked_keys_;
+  TransactionKeyMap read_keys_;
+  TransactionKeyMap write_keys_;
 
   // If true, future Put/Merge/Deletes will be indexed in the
   // WriteBatchWithIndex.

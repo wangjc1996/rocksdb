@@ -291,7 +291,7 @@ bool TransactionLockMgr::IsLockExpired(TransactionID txn_id,
 Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
                                    uint32_t column_family_id,
                                    const std::string& key, Env* env,
-                                   bool exclusive) {
+                                   bool exclusive, bool fail_fast) {
   // Lookup lock map for this column family id
   std::shared_ptr<LockMap> lock_map_ptr = GetLockMap(column_family_id);
   LockMap* lock_map = lock_map_ptr.get();
@@ -309,17 +309,18 @@ Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
   LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
 
   LockInfo lock_info(txn->GetID(), txn->GetExpirationTime(), exclusive);
+
   int64_t timeout = txn->GetLockTimeout();
 
   return AcquireWithTimeout(txn, lock_map, stripe, column_family_id, key, env,
-                            timeout, lock_info);
+                            timeout, lock_info, fail_fast);
 }
 
 // Helper function for TryLock().
 Status TransactionLockMgr::AcquireWithTimeout(
     PessimisticTransaction* txn, LockMap* lock_map, LockMapStripe* stripe,
     uint32_t column_family_id, const std::string& key, Env* env,
-    int64_t timeout, const LockInfo& lock_info) {
+    int64_t timeout, const LockInfo& lock_info, bool fail_fast) {
   Status result;
   uint64_t end_time = 0;
 
@@ -346,9 +347,15 @@ Status TransactionLockMgr::AcquireWithTimeout(
   result = AcquireLocked(lock_map, stripe, key, env, lock_info,
                          &expire_time_hint, &wait_ids);
 
+  if (!result.ok() && fail_fast) {
+    stripe->stripe_mutex->UnLock();
+    return result;
+  }
+
   if (!result.ok() && timeout != 0) {
     PERF_TIMER_GUARD(key_lock_wait_time);
     PERF_COUNTER_ADD(key_lock_wait_count, 1);
+
     // If we weren't able to acquire the lock, we will keep retrying as long
     // as the timeout allows.
     bool timed_out = false;

@@ -79,6 +79,8 @@ class PessimisticTransactionDB : public TransactionDB {
   Status TryLock(PessimisticTransaction* txn, uint32_t cfh_id,
                  const std::string& key, bool exclusive);
 
+  Status DoTryLock(PessimisticTransaction* txn, uint32_t cfh_id, const std::string& key, bool exclusive, bool optimistic = false);
+
   void UnLock(PessimisticTransaction* txn, const TransactionKeyMap* keys);
   void UnLock(PessimisticTransaction* txn, uint32_t cfh_id,
               const std::string& key);
