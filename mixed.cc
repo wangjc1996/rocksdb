@@ -46,6 +46,8 @@ void initialize_db(TransactionDB** db_ptr, const string db_path, const string wa
 	options.wal_dir = wal_path;
 	options.manual_wal_flush = false;
 	options.create_if_missing = true;
+	options.write_buffer_size = 512 << 20;
+	options.max_write_buffer_number = 10;
 
 	TransactionDBOptions txn_db_options;
 	txn_db_options.write_policy = TxnDBWritePolicy::WRITE_COMMITTED;
@@ -65,7 +67,7 @@ void do_prepare(TransactionDB* db, int keys) {
 		const char* key = to_string(i).c_str();
 		const char* value = "*";
 
-		s = txn->DoPut(key, value, true);
+		s = txn->Put(key, value);
 		if (!s.ok()) break;
 	}
 
@@ -110,7 +112,6 @@ void worker_thread_func(thread_data *data, int num_threads, int index, Transacti
 		dist = uniform_int_distribution<>(index * limit, (index + 1) * limit - 1);
 	}
 	std::uniform_int_distribution<> dist_write(0, txn_size - 1);
-
 	vector<int> write_pos_pool(txn_size);
 	for (int i = 0; i < txn_size; i++) write_pos_pool[i] = i;
 
@@ -131,7 +132,6 @@ void worker_thread_func(thread_data *data, int num_threads, int index, Transacti
 		sort(write_pos.begin(), write_pos.end());
 
 		auto tt0 = my_clock::now();
-
 #if HAS_RETRY
 		while (!succ && running) {
 #endif
@@ -144,32 +144,33 @@ void worker_thread_func(thread_data *data, int num_threads, int index, Transacti
 
 			Transaction *txn = db->BeginTransaction(writeOptions, txn_option);
 			auto iter = write_pos.begin();
+			auto guard = write_pos.end();
 			ReadOptions readOptions;
 
 			for (int i = 0; i < txn_size; ++i) {
 				bool optimistic = (rand() % rand_bound) < opt.ratio_occ;
-				// printf("o: %s", optimistic ? "true" : "false");
 
 				string id = to_string(ids[i]);
 				const char *key = id.c_str();
 
 				auto t0 = my_clock::now();
-
-				if (*iter == i) {
+				if (iter != guard && *iter == i) {
 					s = txn->DoPut(key, id.c_str(), optimistic);
+					//s = txn->Put(key, id.c_str());
 					iter++;
 				} else {
 					string tmp_string;
 					s = txn->DoGet(readOptions, id.c_str(), &tmp_string, optimistic);
+					//s = txn->Get(readOptions, id.c_str(), &tmp_string);
+					//printf("%s\n", tmp_string.c_str());
 				}
-
 				auto t1 = my_clock::now();
 
+				data->sum_time[i] +=  t1 - t0;
 				if (!s.ok()) {
 					succ = false;
 					break;
 				} else {
-					data->sum_time.push_back(t1 - t0);
 					++data->num_req;
 				}
 			}
@@ -180,20 +181,20 @@ void worker_thread_func(thread_data *data, int num_threads, int index, Transacti
 			else s = txn->Rollback();
 			auto t1 = my_clock::now();
 
-			if (!s.ok())
-				succ = false;
+			if (!s.ok()) succ = false;
 
 			if (succ) {
-				data->sum_time.push_back(t1 - t0);
+				//data->sum_time[txn_size] = data->sum_time[txn_size] + t1 - t0;
+				data->sum_time[txn_size] +=  t1 - t0;
 				++data->committed;
 			} else {
+				data->sum_time[txn_size] +=  t1 - t0;
 				++data->aborted;
 			}
 			delete txn;
 #if HAS_RETRY
 		}
 #endif
-
 		auto tt1 = my_clock::now();
 
 		// succ may be false for no-retry case
@@ -205,8 +206,7 @@ void worker_thread_func(thread_data *data, int num_threads, int index, Transacti
 void do_run(TransactionDB *db) {
 	double percent_2pl = ((double)opt.ratio_2pl) / (opt.ratio_2pl + opt.ratio_occ);
 
-	printf("threads: %d, key range: %d\nreads: %d, writes: %d\nsync: %s, has conflict: %s\n2pl%%: %.2lf, occ%%: %.2lf\n",
-opt.threads, opt.keys, opt.reads, opt.writes, (opt.sync ? "true" : "false"), (opt.has_conflict ? "true" : "false"), percent_2pl * 100, (1 - percent_2pl) * 100);
+	//printf("threads: %d, key range: %d\nreads: %d, writes: %d\nsync: %s, has conflict: %s\n2pl%%: %.2lf, occ%%: %.2lf\n", opt.threads, opt.keys, opt.reads, opt.writes, (opt.sync ? "true" : "false"), (opt.has_conflict ? "true" : "false"), percent_2pl * 100, (1 - percent_2pl) * 100);
 	starting = false;
 	running = true;
 
@@ -217,6 +217,7 @@ opt.threads, opt.keys, opt.reads, opt.writes, (opt.sync ? "true" : "false"), (op
 	int txn_size = opt.reads + opt.writes;
 	thread_data* thread_data_arr = new thread_data[threads];
 	for (int i = 0; i < threads; ++i) {
+		thread_data_arr[i].sum_time = vector<dur_t>(txn_size + 1);
 		worker_threads.emplace_back(worker_thread_func, &thread_data_arr[i], threads, i, db);
 	}
 	timing_thread.join();
@@ -238,11 +239,12 @@ opt.threads, opt.keys, opt.reads, opt.writes, (opt.sync ? "true" : "false"), (op
 		// printf("commit time %d = %zd\n", txn_size, thread_data_arr[i].sum_time[txn_size].count());
 	}
 
-	cout << "agg commit thpt: " << 1.0 * agg.committed / runtime << "tps" << endl;
-	cout << "agg abort thpt: " << 1.0 * agg.aborted / runtime << "tps" << endl;
-	cout << "non commit lat: " << duration_cast<microseconds>(non_commit_lat / (agg.num_req)).count() << endl;
-	cout << "commit lat: " << duration_cast<microseconds>(commit_lat / agg.committed).count() << endl;
-	cout << "whole txn lat: " << duration_cast<microseconds>(agg.whole_txn_time / agg.committed).count() << endl;
+	//cout << "agg commit thpt: " << 1.0 * agg.committed / runtime << "tps" << endl;
+	//cout << "agg abort thpt: " << 1.0 * agg.aborted / runtime << "tps" << endl;
+	printf("%.2lf\t%.2lf\n", 1.0 * agg.committed / runtime, 1.0 * agg.aborted / runtime);
+	//cout << "non commit lat: " << duration_cast<microseconds>(non_commit_lat / (agg.num_req)).count() << endl;
+	//cout << "commit lat: " << duration_cast<microseconds>(commit_lat / agg.committed).count() << endl;
+	//cout << "whole txn lat: " << duration_cast<microseconds>(agg.whole_txn_time / agg.committed).count() << endl;
 
 	delete[] thread_data_arr;
 }
