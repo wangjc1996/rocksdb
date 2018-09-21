@@ -680,7 +680,7 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
 
     std::string key_str = key.ToString();
 
-    TrackKey(cfh_id, key_str, seq, read_only, exclusive);
+//    TrackKey(cfh_id, key_str, seq, read_only, exclusive);
 
     DoTrackKey(cfh_id, key_str, seq, read_only, exclusive);
 
