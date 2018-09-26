@@ -207,6 +207,7 @@ LIB_SOURCES =                                                   \
   utilities/transactions/transaction_base.cc                    \
   utilities/transactions/transaction_db_mutex_impl.cc           \
   utilities/transactions/transaction_lock_mgr.cc                \
+  utilities/transactions/transaction_state_mgr.cc               \
   utilities/transactions/transaction_util.cc                    \
   utilities/transactions/write_prepared_txn.cc                  \
   utilities/transactions/write_prepared_txn_db.cc               \

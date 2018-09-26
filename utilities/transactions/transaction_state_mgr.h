@@ -29,29 +29,51 @@ struct StateInfo {
     static const uint64_t kOptimisticReadMask;
     static const uint64_t kOptimisticWriteMask;
     static const uint64_t kPessimisticReadMask;
+    static const uint64_t kPessimisticWriteMask;
     void IncreaseImpl(uint64_t mask, size_t offset);
     void DecreaseImpl(uint64_t mask, size_t offset);
 };
 
-struct StateMap;
-struct StateMapStripe;
-class Slice;
+struct StateMapStripe {
+  explicit StateMapStripe(std::shared_ptr<TransactionDBMutexFactory> factory) {
+    stripe_mutex = factory->AllocateMutex();
+    assert(stripe_mutex);
+  }
 
-namespace {
-void UnrefStateMapsCache(void* ptr) {
-  // Called when a thread exits or a ThreadLocalPtr gets destroyed.
-  auto state_maps_cache =
-      static_cast<std::unordered_map<uint32_t, std::shared_ptr<StateMap>>*>(ptr);
-  delete state_maps_cache;
-}
-}  // anonymous namespace
+  std::shared_ptr<TransactionDBMutex> stripe_mutex;
+
+  std::unordered_map<std::string, std::atomic<uint64_t>> keys;
+};
+
+struct StateMap {
+  explicit StateMap(size_t num_stripes, std::shared_ptr<TransactionDBMutexFactory> factory)
+      : num_stripes_(num_stripes) {
+    state_map_stripes_.reserve(num_stripes_);
+    for (size_t i = 0; i < num_stripes; i++) {
+      StateMapStripe* stripe = new StateMapStripe(factory);
+      state_map_stripes_.push_back(stripe);
+    }
+  }
+
+  ~StateMap() {
+    for (auto stripe : state_map_stripes_) {
+      delete stripe;
+    }
+  }
+
+  // Number of sepearate StateMapStripes to create, each with their own Mutex
+  const size_t num_stripes_;
+
+  std::vector<StateMapStripe*> state_map_stripes_;
+
+  size_t GetStripe(const std::string& key) const;
+};
 
 class TransactionStateMgr {
  public:
   TransactionStateMgr(size_t default_num_stripes, 
     std::shared_ptr<TransactionDBMutexFactory> mutex_factory)
     : default_num_stripes_(default_num_stripes),
-      state_maps_cache_(new ThreadLocalPtr(&UnrefStateMapsCache)),
       mutex_factory_(mutex_factory) {}
 
   ~TransactionStateMgr();
@@ -80,17 +102,13 @@ class TransactionStateMgr {
   InstrumentedMutex state_map_mutex_;
 
   // Map of ColumnFamilyId to locked key info
-  using StateMaps = std::unordered_map<uint32_t, std::shared_ptr<StateMap>>;
+  using StateMaps = std::unordered_map<uint32_t, StateMap*>;
   StateMaps state_maps_;
-
-  // Thread-local cache of entries in state_maps_.  This is an optimization
-  // to avoid acquiring a mutex in order to look up a StateMap
-  std::unique_ptr<ThreadLocalPtr> state_maps_cache_;
 
   // Used to allocate mutexes/condvars to use when locking keys
   std::shared_ptr<TransactionDBMutexFactory> mutex_factory_;
 
-  std::shared_ptr<StateMap> GetStateMap(uint32_t column_family_id);
+  StateMap* GetStateMap(uint32_t column_family_id);
 
   // No copying allowed
   TransactionStateMgr(const TransactionStateMgr&);

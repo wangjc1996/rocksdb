@@ -59,6 +59,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
   txn_state_ = STARTED;
 
   deadlock_detect_ = txn_options.deadlock_detect;
+  track_state_ = txn_options.track_state;
   deadlock_detect_depth_ = txn_options.deadlock_detect_depth;
   write_batch_.SetMaxBytes(txn_options.max_write_batch_size);
 
@@ -98,48 +99,51 @@ PessimisticTransaction::~PessimisticTransaction() {
 }
 
 void PessimisticTransaction::Clear() {
-  const TransactionKeyMap& locked_keys = GetTrackedKeys();
-
-  for (auto& key_map_iter : locked_keys) {
-    const auto& cf = key_map_iter.first;
-    const auto& key_info_map = key_map_iter.second;
+  if (track_state_) {
+    const TransactionKeyMap& locked_keys = GetTrackedKeys();
+  
+    for (auto& key_map_iter : locked_keys) {
+      const auto& cf = key_map_iter.first;
+      const auto& key_info_map = key_map_iter.second;
+      
+      for (auto& key_info_iter : key_info_map) {
+        const auto& key = key_info_iter.first;
+        bool is_write = key_info_iter.second.exclusive;
+  
+        if (is_write) {
+  	  DoGetState(cf, key).DecreaseWrite(false);
+        } else {
+  	  DoGetState(cf, key).DecreaseRead(false);
+        }
+      }
+    }
+    const TransactionKeyMap& write_keys = GetWriteKeys();
+  
+    for (auto& key_map_iter : write_keys) {
+      const auto& cf = key_map_iter.first;
+      const auto& key_info_map = key_map_iter.second;
+      
+      for (auto& key_info_iter : key_info_map) {
+        const auto& key = key_info_iter.first;
+  
+        DoGetState(cf, key).DecreaseWrite(true);
+      }
+    }
     
-    for (auto& key_info_iter : key_info_map) {
-      const auto& key = key_info_iter.first;
-      bool is_write = key_info_iter.second.exclusive;
-
-      if (is_write) {
-	DoGetState(cf, key).DecreaseWrite(false);
-      } else {
-	DoGetState(cf, key).DecreaseRead(false);
+    const TransactionKeyMap& read_keys = GetReadKeys();
+  
+    for (auto& key_map_iter : read_keys) {
+      const auto& cf = key_map_iter.first;
+      const auto& key_info_map = key_map_iter.second;
+      
+      for (auto& key_info_iter : key_info_map) {
+        const auto& key = key_info_iter.first;
+  
+        DoGetState(cf, key).DecreaseRead(true);
       }
     }
   }
-  const TransactionKeyMap& write_keys = GetWriteKeys();
 
-  for (auto& key_map_iter : write_keys) {
-    const auto& cf = key_map_iter.first;
-    const auto& key_info_map = key_map_iter.second;
-    
-    for (auto& key_info_iter : key_info_map) {
-      const auto& key = key_info_iter.first;
-
-      DoGetState(cf, key).DecreaseWrite(true);
-    }
-  }
-  
-  const TransactionKeyMap& read_keys = GetReadKeys();
-
-  for (auto& key_map_iter : read_keys) {
-    const auto& cf = key_map_iter.first;
-    const auto& key_info_map = key_map_iter.second;
-    
-    for (auto& key_info_iter : key_info_map) {
-      const auto& key = key_info_iter.first;
-
-      DoGetState(cf, key).DecreaseRead(true);
-    }
-  }
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
   txn_db_impl_->UnLock(this, &GetWriteKeys());
   TransactionBaseImpl::Clear();

@@ -96,6 +96,7 @@ struct TransactionDBOptions {
 };
 
 struct TransactionOptions {
+  bool track_state = false;
   // Setting set_snapshot=true is the same as calling
   // Transaction::SetSnapshot().
   bool set_snapshot = false;

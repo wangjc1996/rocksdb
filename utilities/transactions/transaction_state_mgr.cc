@@ -37,68 +37,35 @@ const uint64_t StateInfo::kOptimisticWriteMask = kBaseMask << 16;
 const uint64_t StateInfo::kPessimisticReadMask = kBaseMask << 32;
 const uint64_t StateInfo::kPessimisticWriteMask = kBaseMask << 48;
 
-struct StateMapStripe {
-  explicit StateMapStripe(std::shared_ptr<TransactionDBMutexFactory> factory) {
-    stripe_mutex = factory->AllocateMutex();
-    stripe_cv = factory->AllocateCondVar();
-    assert(stripe_mutex);
-  }
-
-  std::shared_ptr<TransactionDBMutex> stripe_mutex;
-
-  std::unordered_map<std::string, std::atomic<uint64_t>> keys;
-};
 
 // Map of #num_stripes StateMapStripes
-struct StateMap {
-  explicit StateMap(size_t num_stripes,
-                   std::shared_ptr<TransactionDBMutexFactory> factory)
-      : num_stripes_(num_stripes) {
-    state_map_stripes_.reserve(num_stripes);
-    for (size_t i = 0; i < num_stripes; i++) {
-      StateMapStripe* stripe = new StateMapStripe(factory);
-      state_map_stripes_.push_back(stripe);
-    }
-  }
-
-  ~StateMap() {
-    for (auto stripe : state_map_stripes_) {
-      delete stripe;
-    }
-  }
-
-  // Number of sepearate StateMapStripes to create, each with their own Mutex
-  const size_t num_stripes_;
-
-  std::vector<StateMapStripe*> state_map_stripes_;
-
-  size_t GetStripe(const std::string& key) const;
-};
 
 void StateInfo::IncreaseImpl(uint64_t mask, size_t offset) {
-  uint64_t old_val = handle_->load();
-  while (true) {
-    uint64_t count = (old_val & mask) >> offset;
-    count++;
-    assert(count <= kBaseMask);
-    uint64_t new_val = (old_val & ~mask) | (count << offset);
-    if (handle_->compare_exchange_weak(old_val, new_val)) {
-      break;
-    }
-  }
+	(void)mask;(void)offset;
+//  uint64_t old_val = handle_->load();
+//  while (true) {
+//    uint64_t count = (old_val & mask) >> offset;
+//    count++;
+//    assert(count <= kBaseMask);
+//    uint64_t new_val = (old_val & ~mask) | (count << offset);
+//    if (handle_->compare_exchange_weak(old_val, new_val)) {
+//      break;
+//    }
+//  }
 }
 
 void StateInfo::DecreaseImpl(uint64_t mask, size_t offset) {
-  uint64_t old_val = handle_->load();
-  while (true) {
-    uint64_t count = (old_val & mask) >> offset;
-    assert(count > 0);
-    count--;
-    uint64_t new_val = (old_val & ~mask) | (count << offset);
-    if (handle_->compare_exchange_weak(old_val, new_val)) {
-      break;
-    }
-  }
+	(void)mask;(void)offset;
+//  uint64_t old_val = handle_->load();
+//  while (true) {
+//    uint64_t count = (old_val & mask) >> offset;
+//    assert(count > 0);
+//    count--;
+//    uint64_t new_val = (old_val & ~mask) | (count << offset);
+//    if (handle_->compare_exchange_weak(old_val, new_val)) {
+//      break;
+//    }
+//  }
 }
 
 void StateInfo::IncreaseRead(bool optimistic) {
@@ -146,9 +113,7 @@ void TransactionStateMgr::AddColumnFamily(uint32_t column_family_id) {
   InstrumentedMutexLock l(&state_map_mutex_);
 
   if (state_maps_.find(column_family_id) == state_maps_.end()) {
-    state_maps_.emplace(column_family_id,
-                       std::shared_ptr<StateMap>(
-                           new StateMap(default_num_stripes_, mutex_factory_)));
+    state_maps_.emplace(column_family_id, new StateMap(default_num_stripes_, mutex_factory_));
   } else {
     // column_family already exists in lock map
     assert(false);
@@ -170,68 +135,59 @@ void TransactionStateMgr::RemoveColumnFamily(uint32_t column_family_id) {
 
   // Clear all thread-local caches
   autovector<void*> local_caches;
-  state_maps_cache_->Scrape(&local_caches, nullptr);
   for (auto cache : local_caches) {
     delete static_cast<StateMaps*>(cache);
   }
 }
 
 StateInfo TransactionStateMgr::GetState(uint32_t column_family_id, const std::string& key) {
-  std::shared_ptr<StateMap> state_map_ptr = GetStateMap(column_family_id);
-  StateMap* state_map = state_map_ptr.get();
-  assert(state_map != nullptr);
-  // Need to lock the mutex for the stripe that this key hashes to
+  StateMap* state_map = GetStateMap(column_family_id);
+
   size_t stripe_num = state_map->GetStripe(key);
-  assert(state_map->state_map_stripes_.size() > stripe_num);
-  StateMapStripe* stripe = state_map->state_map_stripes_.at(stripe_num);
+  // assert(state_map->state_map_stripes_.size() > stripe_num);
+  StateMapStripe* stripe = state_map->state_map_stripes_[stripe_num];
 
-  stripe->stripe_mutex->Lock();
+  // stripe->stripe_mutex->Lock();
 
-  auto stripe_iter = stripe->keys.find(key);
+  StateInfo info(&stripe->keys[key]);
 
-  if (stripe_iter == stripe->keys.end()) {
-    stripe->keys.emplace(std::piecewise_construct, 
-                        std::forward_as_tuple(key), 
-                        std::forward_as_tuple(0));
-    stripe_iter = stripe->keys.find(key);
-  }
-  assert(stripe_iter != stripe->keys.end());
-  stripe->stripe_mutex->UnLock();
+  // stripe->stripe_mutex->UnLock();
 
-  return StateInfo(&stripe_iter->second);
+  return info;
 }
 
 // Look up the StateMap shared_ptr for a given column_family_id.
 // Note:  The StateMap is only valid as long as the caller is still holding on
 //   to the returned shared_ptr.
-std::shared_ptr<StateMap> TransactionStateMgr::GetStateMap(
+StateMap* TransactionStateMgr::GetStateMap(
     uint32_t column_family_id) {
-  // First check thread-local cache
-  if (state_maps_cache_->Get() == nullptr) {
-    state_maps_cache_->Reset(new StateMaps());
-  }
-
-  auto state_maps_cache = static_cast<StateMaps*>(state_maps_cache_->Get());
-
-  auto state_map_iter = state_maps_cache->find(column_family_id);
-  if (state_map_iter != state_maps_cache->end()) {
-    // Found lock map for this column family.
-    return state_map_iter->second;
-  }
+//  // First check thread-local cache
+//  if (state_maps_cache_->Get() == nullptr) {
+//    state_maps_cache_->Reset(new StateMaps());
+//  }
+//
+//  auto state_maps_cache = static_cast<StateMaps*>(state_maps_cache_->Get());
+//
+//  auto state_map_iter = state_maps_cache->find(column_family_id);
+//  if (state_map_iter != state_maps_cache->end()) {
+//    // Found lock map for this column family.
+//    return state_map_iter->second;
+//  }
 
   // Not found in local cache, grab mutex and check shared StateMaps
   InstrumentedMutexLock l(&state_map_mutex_);
 
-  state_map_iter = state_maps_.find(column_family_id);
-  if (state_map_iter == state_maps_.end()) {
-    return std::shared_ptr<StateMap>(nullptr);
-  } else {
-    // Found lock map.  Store in thread-local cache and return.
-    std::shared_ptr<StateMap>& state_map = state_map_iter->second;
-    state_maps_cache->insert({column_family_id, state_map});
-
-    return state_map;
-  }
+  return state_maps_[column_family_id];
+//  auto state_map_iter = state_maps_.find(column_family_id);
+//  if (state_map_iter == state_maps_.end()) {
+//    return std::shared_ptr<StateMap>(nullptr);
+//  } else {
+//    // Found lock map.  Store in thread-local cache and return.
+//    std::shared_ptr<StateMap>& state_map = state_map_iter->second;
+//    // state_maps_cache->insert({column_family_id, state_map});
+//
+//    return state_map;
+//  }
 }
 }  //  namespace rocksdb
 #endif  // ROCKSDB_LITE

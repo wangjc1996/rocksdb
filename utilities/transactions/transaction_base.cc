@@ -596,16 +596,16 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
                                    bool exclusive, bool optimistic) {
   if (optimistic) {
     if (read_only) {
-      if (TrackKey(&read_keys_, cfh_id, key, seq, read_only, exclusive)) {
+      if (TrackKey(&read_keys_, cfh_id, key, seq, read_only, exclusive) && track_state_) {
         DoGetState(cfh_id, key).IncreaseRead(true);
 }
     } else {
-      if (TrackKey(&write_keys_, cfh_id, key, seq, read_only, exclusive)) {
+      if (TrackKey(&write_keys_, cfh_id, key, seq, read_only, exclusive && track_state_)) {
 	DoGetState(cfh_id, key).IncreaseWrite(true);
 }
     }
   } else {
-    if (TrackKey(&tracked_keys_, cfh_id, key, seq, read_only, exclusive)) {
+    if (TrackKey(&tracked_keys_, cfh_id, key, seq, read_only, exclusive && track_state_)) {
       if (read_only) {
 	DoGetState(cfh_id, key).IncreaseRead(false);
       } else {

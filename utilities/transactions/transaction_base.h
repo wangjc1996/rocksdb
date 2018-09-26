@@ -283,6 +283,7 @@ class TransactionBaseImpl : public Transaction {
 
   DB* db_;
   DBImpl* dbimpl_;
+  bool track_state_;
 
   WriteOptions write_options_;
 
