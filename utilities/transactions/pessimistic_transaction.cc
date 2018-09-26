@@ -88,6 +88,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 
 PessimisticTransaction::~PessimisticTransaction() {
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
+  txn_db_impl_->UnLock(this, &GetWriteKeys());
   if (expiration_time_ > 0) {
     txn_db_impl_->RemoveExpirableTransaction(txn_id_);
   }
@@ -97,7 +98,50 @@ PessimisticTransaction::~PessimisticTransaction() {
 }
 
 void PessimisticTransaction::Clear() {
+  const TransactionKeyMap& locked_keys = GetTrackedKeys();
+
+  for (auto& key_map_iter : locked_keys) {
+    const auto& cf = key_map_iter.first;
+    const auto& key_info_map = key_map_iter.second;
+    
+    for (auto& key_info_iter : key_info_map) {
+      const auto& key = key_info_iter.first;
+      bool is_write = key_info_iter.second.exclusive;
+
+      if (is_write) {
+	DoGetState(cf, key).DecreaseWrite(false);
+      } else {
+	DoGetState(cf, key).DecreaseRead(false);
+      }
+    }
+  }
+  const TransactionKeyMap& write_keys = GetWriteKeys();
+
+  for (auto& key_map_iter : write_keys) {
+    const auto& cf = key_map_iter.first;
+    const auto& key_info_map = key_map_iter.second;
+    
+    for (auto& key_info_iter : key_info_map) {
+      const auto& key = key_info_iter.first;
+
+      DoGetState(cf, key).DecreaseWrite(true);
+    }
+  }
+  
+  const TransactionKeyMap& read_keys = GetReadKeys();
+
+  for (auto& key_map_iter : read_keys) {
+    const auto& cf = key_map_iter.first;
+    const auto& key_info_map = key_map_iter.second;
+    
+    for (auto& key_info_iter : key_info_map) {
+      const auto& key = key_info_iter.first;
+
+      DoGetState(cf, key).DecreaseRead(true);
+    }
+  }
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
+  txn_db_impl_->UnLock(this, &GetWriteKeys());
   TransactionBaseImpl::Clear();
 }
 
@@ -159,7 +203,7 @@ Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& k
     }
   } 
 
-  if (s.ok()) {
+  if (s.ok() && fail_fast) { // fail_fast indicates it's via real tpl
     // We must track all the locked keys so that we can unlock them later. If
     // the key is already locked, this func will update some stats on the
     // tracked key. It could also update the tracked_at_seq if it is lower than
@@ -706,6 +750,9 @@ Status PessimisticTransaction::DoLockAll() {
   return s;
 }
 
+StateInfo PessimisticTransaction::DoGetState(uint32_t column_family_id, const std::string& key) {
+  return txn_db_impl_->DoGetState(column_family_id, key);
+}
 }  // namespace rocksdb
 
 #endif  // ROCKSDB_LITE

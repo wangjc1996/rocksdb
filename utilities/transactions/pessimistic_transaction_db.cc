@@ -40,6 +40,11 @@ PessimisticTransactionDB::PessimisticTransactionDB(
                 txn_db_options_.custom_mutex_factory
                     ? txn_db_options_.custom_mutex_factory
                     : std::shared_ptr<TransactionDBMutexFactory>(
+                          new TransactionDBMutexFactoryImpl())), 
+      state_mgr_(txn_db_options_.num_stripes, 
+		 txn_db_options_.custom_mutex_factory
+                    ? txn_db_options_.custom_mutex_factory
+                    : std::shared_ptr<TransactionDBMutexFactory>(
                           new TransactionDBMutexFactoryImpl())) {
   assert(db_impl_ != nullptr);
   info_log_ = db_impl_->GetDBOptions().info_log;
@@ -69,6 +74,11 @@ PessimisticTransactionDB::PessimisticTransactionDB(
       lock_mgr_(this, txn_db_options_.num_stripes, txn_db_options.max_num_locks,
                 txn_db_options_.max_num_deadlocks,
                 txn_db_options_.custom_mutex_factory
+                    ? txn_db_options_.custom_mutex_factory
+                    : std::shared_ptr<TransactionDBMutexFactory>(
+                          new TransactionDBMutexFactoryImpl())), 
+     state_mgr_(txn_db_options_.num_stripes, 
+		txn_db_options_.custom_mutex_factory
                     ? txn_db_options_.custom_mutex_factory
                     : std::shared_ptr<TransactionDBMutexFactory>(
                           new TransactionDBMutexFactoryImpl())) {
@@ -334,6 +344,7 @@ Status TransactionDB::WrapStackableDB(
 void PessimisticTransactionDB::AddColumnFamily(
     const ColumnFamilyHandle* handle) {
   lock_mgr_.AddColumnFamily(handle->GetID());
+  state_mgr_.AddColumnFamily(handle->GetID());
 }
 
 Status PessimisticTransactionDB::CreateColumnFamily(
@@ -348,6 +359,7 @@ Status PessimisticTransactionDB::CreateColumnFamily(
   s = db_->CreateColumnFamily(options, column_family_name, handle);
   if (s.ok()) {
     lock_mgr_.AddColumnFamily((*handle)->GetID());
+    state_mgr_.AddColumnFamily((*handle)->GetID());
     UpdateCFComparatorMap(*handle);
   }
 
@@ -615,6 +627,11 @@ void PessimisticTransactionDB::UnregisterTransaction(Transaction* txn) {
   assert(it != transactions_.end());
   transactions_.erase(it);
 }
+
+StateInfo PessimisticTransactionDB::DoGetState(uint32_t column_family_id, const std::string& key) {
+  return state_mgr_.GetState(column_family_id, key);
+}
+
 
 }  //  namespace rocksdb
 #endif  // ROCKSDB_LITE

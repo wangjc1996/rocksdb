@@ -21,6 +21,7 @@
 #include "rocksdb/utilities/transaction_db.h"
 #include "utilities/transactions/pessimistic_transaction.h"
 #include "utilities/transactions/transaction_lock_mgr.h"
+#include "utilities/transactions/transaction_state_mgr.h"
 #include "utilities/transactions/write_prepared_txn.h"
 
 namespace rocksdb {
@@ -114,6 +115,8 @@ class PessimisticTransactionDB : public TransactionDB {
 
   TransactionLockMgr::LockStatusData GetLockStatusData() override;
 
+  StateInfo DoGetState(uint32_t column_family_id, const std::string& key);
+
   std::vector<DeadlockPath> GetDeadlockInfoBuffer() override;
   void SetDeadlockInfoBufferSize(uint32_t target_size) override;
 
@@ -148,6 +151,7 @@ class PessimisticTransactionDB : public TransactionDB {
   friend class WriteUnpreparedTransactionTest_RecoveryTest_Test;
   friend class WriteUnpreparedTransactionTest_MarkLogWithPrepSection_Test;
   TransactionLockMgr lock_mgr_;
+  TransactionStateMgr state_mgr_;
 
   // Must be held when adding/dropping column families.
   InstrumentedMutex column_family_mutex_;

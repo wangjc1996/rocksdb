@@ -42,6 +42,8 @@ void TransactionBaseImpl::Clear() {
   write_batch_.Clear();
   commit_time_batch_.Clear();
   tracked_keys_.clear();
+  write_keys_.clear();
+  read_keys_.clear();
   num_puts_ = 0;
   num_deletes_ = 0;
   num_merges_ = 0;
@@ -594,12 +596,23 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
                                    bool exclusive, bool optimistic) {
   if (optimistic) {
     if (read_only) {
-      TrackKey(&read_keys_, cfh_id, key, seq, read_only, exclusive);
+      if (TrackKey(&read_keys_, cfh_id, key, seq, read_only, exclusive)) {
+        DoGetState(cfh_id, key).IncreaseRead(true);
+}
     } else {
-      TrackKey(&write_keys_, cfh_id, key, seq, read_only, exclusive);
+      if (TrackKey(&write_keys_, cfh_id, key, seq, read_only, exclusive)) {
+	DoGetState(cfh_id, key).IncreaseWrite(true);
+}
     }
   } else {
-    TrackKey(&tracked_keys_, cfh_id, key, seq, read_only, exclusive);
+    if (TrackKey(&tracked_keys_, cfh_id, key, seq, read_only, exclusive)) {
+      if (read_only) {
+	DoGetState(cfh_id, key).IncreaseRead(false);
+      } else {
+	DoGetState(cfh_id, key).IncreaseWrite(false);
+      }
+}
+
     if (save_points_ != nullptr && !save_points_->empty()) {
     // Update map of tracked keys in this SavePoint
       TrackKey(&save_points_->top().new_keys_, cfh_id, key, seq, read_only,
@@ -608,28 +621,31 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
   }
 }
 
-void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,
+bool TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,
                                    SequenceNumber seq, bool read_only,
                                    bool exclusive) {
   // Update map of all tracked keys for this transaction
-  TrackKey(&tracked_keys_, cfh_id, key, seq, read_only, exclusive);
+  bool new_key = TrackKey(&tracked_keys_, cfh_id, key, seq, read_only, exclusive);
 
   if (save_points_ != nullptr && !save_points_->empty()) {
     // Update map of tracked keys in this SavePoint
     TrackKey(&save_points_->top().new_keys_, cfh_id, key, seq, read_only,
              exclusive);
   }
+  return new_key;
 }
 
 // Add a key to the given TransactionKeyMap
 // seq for pessimistic transactions is the sequence number from which we know
 // there has not been a concurrent update to the key.
-void TransactionBaseImpl::TrackKey(TransactionKeyMap* key_map, uint32_t cfh_id,
+bool TransactionBaseImpl::TrackKey(TransactionKeyMap* key_map, uint32_t cfh_id,
                                    const std::string& key, SequenceNumber seq,
                                    bool read_only, bool exclusive) {
+  bool new_key = false;
+
   auto& cf_key_map = (*key_map)[cfh_id];
   auto iter = cf_key_map.find(key);
-  if (iter == cf_key_map.end()) {
+  if ((new_key = (iter == cf_key_map.end()))) {
     auto result = cf_key_map.insert({key, TransactionKeyMapInfo(seq)});
     iter = result.first;
   } else if (seq < iter->second.seq) {
@@ -647,6 +663,8 @@ void TransactionBaseImpl::TrackKey(TransactionKeyMap* key_map, uint32_t cfh_id,
     iter->second.num_writes++;
   }
   iter->second.exclusive |= exclusive;
+
+  return new_key;
 }
 
 std::unique_ptr<TransactionKeyMap>
