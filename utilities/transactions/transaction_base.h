@@ -248,7 +248,7 @@ class TransactionBaseImpl : public Transaction {
 
   virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false) override;
 
-  virtual StateInfo DoGetState(uint32_t column_family_id, const std::string& key) = 0;
+  virtual std::atomic<uint64_t>* DoGetState(uint32_t column_family_id, const std::string& key) = 0;
 
   protected:
   void DoTrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive, bool optimistic = false);
@@ -264,11 +264,11 @@ class TransactionBaseImpl : public Transaction {
   //
   // seqno is the earliest seqno this key was involved with this transaction.
   // readonly should be set to true if no data was written for this key
-  bool TrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
+  void TrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seqno,
                 bool readonly, bool exclusive);
 
   // Helper function to add a key to the given TransactionKeyMap
-  static bool TrackKey(TransactionKeyMap* key_map, uint32_t cfh_id,
+  static void TrackKey(TransactionKeyMap* key_map, uint32_t cfh_id,
                        const std::string& key, SequenceNumber seqno,
                        bool readonly, bool exclusive);
 

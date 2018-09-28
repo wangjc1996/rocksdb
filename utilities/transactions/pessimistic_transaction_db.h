@@ -115,7 +115,7 @@ class PessimisticTransactionDB : public TransactionDB {
 
   TransactionLockMgr::LockStatusData GetLockStatusData() override;
 
-  StateInfo DoGetState(uint32_t column_family_id, const std::string& key);
+  std::atomic<uint64_t>* DoGetState(uint32_t column_family_id, const std::string& key);
 
   std::vector<DeadlockPath> GetDeadlockInfoBuffer() override;
   void SetDeadlockInfoBufferSize(uint32_t target_size) override;

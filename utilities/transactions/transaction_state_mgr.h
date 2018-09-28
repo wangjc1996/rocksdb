@@ -8,6 +8,7 @@
 #include <vector>
 #include <atomic>
 
+#include "include/rocksdb/utilities/state_info.h"
 #include "monitoring/instrumented_mutex.h"
 #include "util/autovector.h"
 #include "utilities/transactions/transaction_db_mutex_impl.h"
@@ -15,24 +16,6 @@
 #include "util/thread_local.h"
 
 namespace rocksdb {
-struct StateInfo {
-  StateInfo(std::atomic<uint64_t>* handle) : handle_(handle) {}
-
-  void IncreaseRead(bool optimistic);
-  void DecreaseRead(bool optimisitc);;
-  void IncreaseWrite(bool optimistic);
-  void DecreaseWrite(bool optimisitc);;
-
-  private:
-    std::atomic<uint64_t>* handle_;
-    static const uint64_t kBaseMask;
-    static const uint64_t kOptimisticReadMask;
-    static const uint64_t kOptimisticWriteMask;
-    static const uint64_t kPessimisticReadMask;
-    static const uint64_t kPessimisticWriteMask;
-    void IncreaseImpl(uint64_t mask, size_t offset);
-    void DecreaseImpl(uint64_t mask, size_t offset);
-};
 
 struct StateMapStripe {
   explicit StateMapStripe(std::shared_ptr<TransactionDBMutexFactory> factory) {
@@ -86,7 +69,7 @@ class TransactionStateMgr {
   // this column family is no longer in use.
   void RemoveColumnFamily(uint32_t column_family_id);
 
-  StateInfo GetState(uint32_t column_family_id, const std::string& key);
+  std::atomic<uint64_t>* GetState(uint32_t column_family_id, const std::string& key);
 
  private:
   // Default number of lock map stripes per column family

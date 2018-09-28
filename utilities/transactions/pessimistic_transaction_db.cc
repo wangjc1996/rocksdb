@@ -628,7 +628,7 @@ void PessimisticTransactionDB::UnregisterTransaction(Transaction* txn) {
   transactions_.erase(it);
 }
 
-StateInfo PessimisticTransactionDB::DoGetState(uint32_t column_family_id, const std::string& key) {
+std::atomic<uint64_t>* PessimisticTransactionDB::DoGetState(uint32_t column_family_id, const std::string& key) {
   return state_mgr_.GetState(column_family_id, key);
 }
 

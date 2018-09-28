@@ -41,31 +41,29 @@ const uint64_t StateInfo::kPessimisticWriteMask = kBaseMask << 48;
 // Map of #num_stripes StateMapStripes
 
 void StateInfo::IncreaseImpl(uint64_t mask, size_t offset) {
-	(void)mask;(void)offset;
-//  uint64_t old_val = handle_->load();
-//  while (true) {
-//    uint64_t count = (old_val & mask) >> offset;
-//    count++;
-//    assert(count <= kBaseMask);
-//    uint64_t new_val = (old_val & ~mask) | (count << offset);
-//    if (handle_->compare_exchange_weak(old_val, new_val)) {
-//      break;
-//    }
-//  }
+  uint64_t old_val = handle_->load();
+  while (true) {
+    uint64_t count = (old_val & mask) >> offset;
+    count++;
+    assert(count <= kBaseMask);
+    uint64_t new_val = (old_val & ~mask) | (count << offset);
+    if (handle_->compare_exchange_weak(old_val, new_val)) {
+      break;
+    }
+  }
 }
 
 void StateInfo::DecreaseImpl(uint64_t mask, size_t offset) {
-	(void)mask;(void)offset;
-//  uint64_t old_val = handle_->load();
-//  while (true) {
-//    uint64_t count = (old_val & mask) >> offset;
-//    assert(count > 0);
-//    count--;
-//    uint64_t new_val = (old_val & ~mask) | (count << offset);
-//    if (handle_->compare_exchange_weak(old_val, new_val)) {
-//      break;
-//    }
-//  }
+  uint64_t old_val = handle_->load();
+  while (true) {
+    uint64_t count = (old_val & mask) >> offset;
+    assert(count > 0);
+    count--;
+    uint64_t new_val = (old_val & ~mask) | (count << offset);
+    if (handle_->compare_exchange_weak(old_val, new_val)) {
+      break;
+    }
+  }
 }
 
 void StateInfo::IncreaseRead(bool optimistic) {
@@ -132,62 +130,32 @@ void TransactionStateMgr::RemoveColumnFamily(uint32_t column_family_id) {
 
     state_maps_.erase(state_maps_iter);
   }  // lock_map_mutex_
-
-  // Clear all thread-local caches
-  autovector<void*> local_caches;
-  for (auto cache : local_caches) {
-    delete static_cast<StateMaps*>(cache);
-  }
 }
 
-StateInfo TransactionStateMgr::GetState(uint32_t column_family_id, const std::string& key) {
+std::atomic<uint64_t>* TransactionStateMgr::GetState(uint32_t column_family_id, const std::string& key) {
   StateMap* state_map = GetStateMap(column_family_id);
+  if (state_map == nullptr) return nullptr;
 
   size_t stripe_num = state_map->GetStripe(key);
   // assert(state_map->state_map_stripes_.size() > stripe_num);
   StateMapStripe* stripe = state_map->state_map_stripes_[stripe_num];
 
-  // stripe->stripe_mutex->Lock();
+  stripe->stripe_mutex->Lock();
 
-  StateInfo info(&stripe->keys[key]);
+  std::atomic<uint64_t>* state = &stripe->keys[key];
 
-  // stripe->stripe_mutex->UnLock();
+  stripe->stripe_mutex->UnLock();
 
-  return info;
+  return state;
 }
 
 // Look up the StateMap shared_ptr for a given column_family_id.
 // Note:  The StateMap is only valid as long as the caller is still holding on
 //   to the returned shared_ptr.
-StateMap* TransactionStateMgr::GetStateMap(
-    uint32_t column_family_id) {
-//  // First check thread-local cache
-//  if (state_maps_cache_->Get() == nullptr) {
-//    state_maps_cache_->Reset(new StateMaps());
-//  }
-//
-//  auto state_maps_cache = static_cast<StateMaps*>(state_maps_cache_->Get());
-//
-//  auto state_map_iter = state_maps_cache->find(column_family_id);
-//  if (state_map_iter != state_maps_cache->end()) {
-//    // Found lock map for this column family.
-//    return state_map_iter->second;
-//  }
-
-  // Not found in local cache, grab mutex and check shared StateMaps
+StateMap* TransactionStateMgr::GetStateMap(uint32_t column_family_id) {
   InstrumentedMutexLock l(&state_map_mutex_);
 
   return state_maps_[column_family_id];
-//  auto state_map_iter = state_maps_.find(column_family_id);
-//  if (state_map_iter == state_maps_.end()) {
-//    return std::shared_ptr<StateMap>(nullptr);
-//  } else {
-//    // Found lock map.  Store in thread-local cache and return.
-//    std::shared_ptr<StateMap>& state_map = state_map_iter->second;
-//    // state_maps_cache->insert({column_family_id, state_map});
-//
-//    return state_map;
-//  }
 }
 }  //  namespace rocksdb
 #endif  // ROCKSDB_LITE

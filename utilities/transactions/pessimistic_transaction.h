@@ -113,7 +113,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
   int64_t GetDeadlockDetectDepth() const { return deadlock_detect_depth_; }
 
  protected:
-  StateInfo DoGetState(uint32_t column_family_id, const std::string& key) override;
+  std::atomic<uint64_t>* DoGetState(uint32_t column_family_id, const std::string& key) override;
 
   Status DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false) override;
   // Refer to
