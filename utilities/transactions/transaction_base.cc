@@ -205,7 +205,7 @@ Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
                                          ColumnFamilyHandle* column_family,
                                          const Slice& key, std::string* value,
                                          bool exclusive) {
-  Status s = TryLock(column_family, key, true /* read_only */, exclusive);
+  Status s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
 
   if (s.ok() && value != nullptr) {
     assert(value != nullptr);

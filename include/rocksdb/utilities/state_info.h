@@ -6,9 +6,10 @@ struct StateInfo {
   StateInfo(std::atomic<uint64_t>* handle) : handle_(handle) {}
 
   void IncreaseRead(bool optimistic);
-  void DecreaseRead(bool optimisitc);;
+  void DecreaseRead(bool optimisitc);
   void IncreaseWrite(bool optimistic);
-  void DecreaseWrite(bool optimisitc);;
+  void DecreaseWrite(bool optimisitc);
+  uint64_t Load() const { return handle_->load(); }
 
   private:
     std::atomic<uint64_t>* handle_;

@@ -467,6 +467,7 @@ class Transaction {
   // assigns the id. Although currently it is the case, the id is not guaranteed
   // to remain the same across restarts.
   uint64_t GetId() { return id_; }
+
   virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
                const Slice& value, bool optimistic = false) = 0;
 
@@ -475,12 +476,14 @@ class Transaction {
     return DoPut(nullptr, key, value, optimistic);
   }
 
+  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false) = 0; 
+
   Status DoGet(const ReadOptions& options, const Slice& key,
                      std::string* value, bool optimistic = false) {
     return DoGet(options, nullptr, key, value, optimistic);
   };
 
-  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false) = 0; 
+  virtual std::atomic<uint64_t>* DoGetState(uint32_t cfh_id, const std::string& key) = 0;
 
  protected:
   explicit Transaction(const TransactionDB* /*db*/) {}
