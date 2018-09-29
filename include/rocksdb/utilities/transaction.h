@@ -481,7 +481,13 @@ class Transaction {
   Status DoGet(const ReadOptions& options, const Slice& key,
                      std::string* value, bool optimistic = false) {
     return DoGet(options, nullptr, key, value, optimistic);
-  };
+  }
+
+  virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false) = 0; 
+
+  Status DoDelete(const Slice& key, bool optimistic = false) {
+	return DoDelete(nullptr, key, optimistic);
+  }
 
   virtual std::atomic<uint64_t>* DoGetState(uint32_t cfh_id, const std::string& key) = 0;
 

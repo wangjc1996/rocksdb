@@ -205,7 +205,8 @@ Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
                                          ColumnFamilyHandle* column_family,
                                          const Slice& key, std::string* value,
                                          bool exclusive) {
-  Status s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
+  (void)exclusive;
+  Status s = DoPessimisticLock(column_family, key, true /* read_only */, true /* exclusive */, true /* fail_fast */);
 
   if (s.ok() && value != nullptr) {
     assert(value != nullptr);
@@ -358,6 +359,25 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
     s = GetBatchForWrite()->Put(column_family, key, value);
     if (s.ok()) {
       num_puts_++;
+    }
+  }
+
+  return s;
+}
+
+Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic) {
+  Status s;
+
+  if (optimistic) {
+    s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
+  } else {
+    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+  }
+
+  if (s.ok()) {
+    s = GetBatchForWrite()->Delete(column_family, key);
+    if (s.ok()) {
+      num_deletes_++;
     }
   }
 
