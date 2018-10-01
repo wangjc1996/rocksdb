@@ -8,7 +8,7 @@
 #ifndef ROCKSDB_LITE
 
 #include <string>
-#include <unordered_map>
+#include <map>
 
 #include "db/read_callback.h"
 
@@ -27,14 +27,14 @@ struct TransactionKeyMapInfo {
   uint32_t num_reads;
 
   bool exclusive;
+  uint8_t key_state; // in locked set | in write set (to be locked) | in read set
 
   explicit TransactionKeyMapInfo(SequenceNumber seq_no)
-      : seq(seq_no), num_writes(0), num_reads(0), exclusive(false) {}
+      : seq(seq_no), num_writes(0), num_reads(0), exclusive(false), key_state(0) {}
 };
 
 using TransactionKeyMap =
-    std::unordered_map<uint32_t,
-                       std::unordered_map<std::string, TransactionKeyMapInfo>>;
+    std::map<uint32_t, std::map<std::string, TransactionKeyMapInfo>>;
 
 class DBImpl;
 struct SuperVersion;

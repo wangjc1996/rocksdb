@@ -42,8 +42,6 @@ void TransactionBaseImpl::Clear() {
   write_batch_.Clear();
   commit_time_batch_.Clear();
   tracked_keys_.clear();
-  write_keys_.clear();
-  read_keys_.clear();
   num_puts_ = 0;
   num_deletes_ = 0;
   num_merges_ = 0;
@@ -292,8 +290,7 @@ Iterator* TransactionBaseImpl::GetIterator(const ReadOptions& read_options,
   return write_batch_.NewIteratorWithBase(column_family, db_iter);
 }
 
-Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key,
-               bool read_only, bool exclusive, bool untracked) {
+Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked) {
   if (untracked) {
     return Status::OK();
   }
@@ -615,19 +612,30 @@ uint64_t TransactionBaseImpl::GetNumKeys() const {
 void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
                                    SequenceNumber seq, bool read_only,
                                    bool exclusive, bool optimistic) {
-  if (optimistic) {
-    if (read_only) {
-      TrackKey(&read_keys_, cfh_id, key, seq, read_only, exclusive);
-    } else {
-      TrackKey(&write_keys_, cfh_id, key, seq, read_only, exclusive);
-    }
-  } else {
-    TrackKey(&tracked_keys_, cfh_id, key, seq, read_only, exclusive);
-    if (save_points_ != nullptr && !save_points_->empty()) {
-      // Update map of tracked keys in this SavePoint
-      TrackKey(&save_points_->top().new_keys_, cfh_id, key, seq, read_only, exclusive);
-    }
+  auto& cf_key_map = tracked_keys_[cfh_id];
+  auto iter = cf_key_map.find(key);
+  if (iter == cf_key_map.end()) {
+    auto result = cf_key_map.insert({key, TransactionKeyMapInfo(seq)});
+    iter = result.first;
+  } else if (seq < iter->second.seq) {
+    // Now tracking this key with an earlier sequence number
+    iter->second.seq = seq;
   }
+  // else we do not update the seq. The smaller the tracked seq, the stronger it
+  // the guarantee since it implies from the seq onward there has not been a
+  // concurrent update to the key. So we update the seq if it implies stronger
+  // guarantees, i.e., if it is smaller than the existing trakced seq.
+
+  if (read_only) {
+    iter->second.num_reads++;
+    if (optimistic) iter->second.key_state |= 1; // occ read
+    else iter->second.key_state |= 4; 		 // 2pl read
+  } else {
+    iter->second.num_writes++;
+    if (optimistic) iter->second.key_state |= 2; // occ write
+    else iter->second.key_state |= 4; 		 // 2pl write
+  }
+  iter->second.exclusive |= exclusive;
 }
 
 void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,

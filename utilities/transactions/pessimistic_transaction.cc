@@ -89,7 +89,6 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 
 PessimisticTransaction::~PessimisticTransaction() {
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
-  txn_db_impl_->UnLock(this, &GetWriteKeys());
   if (expiration_time_ > 0) {
     txn_db_impl_->RemoveExpirableTransaction(txn_id_);
   }
@@ -122,10 +121,11 @@ Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& k
     if (iter == tracked_keys_cf->second.end()) {
       previously_locked = false;
     } else {
-      if (!iter->second.exclusive && exclusive) {
+      auto& info = iter->second;
+      previously_locked = (info.key_state & 4) != 0;
+      if (previously_locked && !info.exclusive && exclusive) {
         lock_upgrade = true;
       }
-      previously_locked = true;
       tracked_at_seq = iter->second.seq;
     }
   }
@@ -398,11 +398,11 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
   }
 
   PessimisticTransactionCallback callback(this);
-//  s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+  // Status s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
   DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
 
   s = db_impl->WriteWithCallback(
-      write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
+     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
   return s;
 }
 
@@ -672,40 +672,29 @@ Status PessimisticTransaction::CheckTransactionForConflicts(DB* db) {
     // we will do a cache-only conflict check.  This can result in TryAgain
     // getting returned if there is not sufficient memtable history to check
     // for conflicts.
-    return TransactionUtil::CheckKeysForConflicts(db_impl, GetReadKeys(),
+    return TransactionUtil::CheckKeysForConflicts(db_impl, GetTrackedKeys(),
                                                   true /* cache_only */);
 }
 
 Status PessimisticTransaction::DoLockAll() {
   // get tracked keys used by occ
-  const TransactionKeyMap& key_map = GetWriteKeys();
-  std::vector<uint32_t> cfs;
+  const TransactionKeyMap& key_map = GetTrackedKeys();
 
   for (auto& key_map_iter : key_map) {
-    const auto& cf = key_map_iter.first;
+    uint32_t cf = key_map_iter.first;
 
-    cfs.push_back(cf);
-  }
-
-  std::sort(cfs.begin(), cfs.end());
-
-  Status s;
-  for (uint32_t cf : cfs) {
-    const auto& keys_info = key_map.at(cf);
-
-    std::vector<std::string> keys;
-    for (auto& key_info_iter : keys_info) {
-      const auto& key = key_info_iter.first;
-      keys.push_back(key);
+    Status s;
+    const auto& keys = key_map_iter.second;
+    for (auto& key_iter : keys) {
+	const auto& key = key_iter.first;
+	const uint8_t key_state = key_iter.second.key_state;
+	if (((key_state & 2) != 0) && ((key_state & 4) == 0))
+            s = DoPessimisticLock(cf, key, false, true, false);
+	if (!s.ok()) return s;
     }
-    std::sort(keys.begin(), keys.end());
-
-    for (const auto& key : keys) {
-      s = DoPessimisticLock(cf, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
-    }
+    // cfs.push_back(cf);
   }
-
-  return s;
+  return Status::OK();
 }
 
 std::atomic<uint64_t>* PessimisticTransaction::DoGetState(uint32_t column_family_id, const std::string& key) {

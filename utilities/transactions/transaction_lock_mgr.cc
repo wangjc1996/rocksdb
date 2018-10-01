@@ -682,9 +682,12 @@ void TransactionLockMgr::UnLock(const PessimisticTransaction* txn,
 
     for (auto& key_iter : keys) {
       const std::string& key = key_iter.first;
+      const uint8_t key_state = key_iter.second.key_state;
 
-      size_t stripe_num = lock_map->GetStripe(key);
-      keys_by_stripe[stripe_num].push_back(&key);
+      if ((key_state & 4) != 0) {
+        size_t stripe_num = lock_map->GetStripe(key);
+        keys_by_stripe[stripe_num].push_back(&key);
+      }
     }
 
     // For each stripe, grab the stripe mutex and unlock all keys in this stripe

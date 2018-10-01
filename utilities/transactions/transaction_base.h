@@ -224,9 +224,6 @@ class TransactionBaseImpl : public Transaction {
   const TransactionKeyMap& GetTrackedKeys() const { return tracked_keys_; }
 
   // Get list of keys in this transaction that already locked
-  const TransactionKeyMap& GetReadKeys() const { return read_keys_; }
-
-  const TransactionKeyMap& GetWriteKeys() const { return write_keys_; }
 
   WriteOptions* GetWriteOptions() override { return &write_options_; }
 
@@ -343,8 +340,6 @@ class TransactionBaseImpl : public Transaction {
   // For Pessimistic Transactions this is the list of locked keys.
   // Optimistic Transactions will wait till commit time to do conflict checking.
   TransactionKeyMap tracked_keys_;
-  TransactionKeyMap read_keys_;
-  TransactionKeyMap write_keys_;
 
   // If true, future Put/Merge/Deletes will be indexed in the
   // WriteBatchWithIndex.
