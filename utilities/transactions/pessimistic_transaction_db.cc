@@ -41,6 +41,12 @@ PessimisticTransactionDB::PessimisticTransactionDB(
                     ? txn_db_options_.custom_mutex_factory
                     : std::shared_ptr<TransactionDBMutexFactory>(
                           new TransactionDBMutexFactoryImpl())), 
+      opt_lock_mgr_(this, txn_db_options_.num_stripes, txn_db_options.max_num_locks,
+                txn_db_options_.max_num_deadlocks,
+                txn_db_options_.custom_mutex_factory
+                    ? txn_db_options_.custom_mutex_factory
+                    : std::shared_ptr<TransactionDBMutexFactory>(
+                          new TransactionDBMutexFactoryImpl())), 
       state_mgr_(txn_db_options_.num_stripes, 
 		 txn_db_options_.custom_mutex_factory
                     ? txn_db_options_.custom_mutex_factory
@@ -72,6 +78,12 @@ PessimisticTransactionDB::PessimisticTransactionDB(
       db_impl_(static_cast_with_check<DBImpl, DB>(db->GetRootDB())),
       txn_db_options_(txn_db_options),
       lock_mgr_(this, txn_db_options_.num_stripes, txn_db_options.max_num_locks,
+                txn_db_options_.max_num_deadlocks,
+                txn_db_options_.custom_mutex_factory
+                    ? txn_db_options_.custom_mutex_factory
+                    : std::shared_ptr<TransactionDBMutexFactory>(
+                          new TransactionDBMutexFactoryImpl())), 
+      opt_lock_mgr_(this, txn_db_options_.num_stripes, txn_db_options.max_num_locks,
                 txn_db_options_.max_num_deadlocks,
                 txn_db_options_.custom_mutex_factory
                     ? txn_db_options_.custom_mutex_factory
@@ -344,6 +356,7 @@ Status TransactionDB::WrapStackableDB(
 void PessimisticTransactionDB::AddColumnFamily(
     const ColumnFamilyHandle* handle) {
   lock_mgr_.AddColumnFamily(handle->GetID());
+  opt_lock_mgr_.AddColumnFamily(handle->GetID());
   state_mgr_.AddColumnFamily(handle->GetID());
 }
 
@@ -359,6 +372,7 @@ Status PessimisticTransactionDB::CreateColumnFamily(
   s = db_->CreateColumnFamily(options, column_family_name, handle);
   if (s.ok()) {
     lock_mgr_.AddColumnFamily((*handle)->GetID());
+    opt_lock_mgr_.AddColumnFamily((*handle)->GetID());
     state_mgr_.AddColumnFamily((*handle)->GetID());
     UpdateCFComparatorMap(*handle);
   }
@@ -375,6 +389,8 @@ Status PessimisticTransactionDB::DropColumnFamily(
   Status s = db_->DropColumnFamily(column_family);
   if (s.ok()) {
     lock_mgr_.RemoveColumnFamily(column_family->GetID());
+    opt_lock_mgr_.RemoveColumnFamily(column_family->GetID());
+    state_mgr_.RemoveColumnFamily(column_family->GetID());
   }
 
   return s;
@@ -390,13 +406,21 @@ Status PessimisticTransactionDB::TryLock(PessimisticTransaction* txn,
 Status PessimisticTransactionDB::DoTryLock(PessimisticTransaction* txn,
                                          uint32_t cfh_id,
                                          const std::string& key,
-                                         bool exclusive, bool fail_fast) {
-  return lock_mgr_.TryLock(txn, cfh_id, key, GetEnv(), exclusive, fail_fast);
+                                         bool exclusive, 
+					 bool pessimistic) {
+  if (pessimistic) return lock_mgr_.TryLock(txn, cfh_id, key, GetEnv(), exclusive, true);
+  else return opt_lock_mgr_.TryLock(txn, cfh_id, key, GetEnv(), exclusive, false);
+}
+
+void PessimisticTransactionDB::DoUnLock(PessimisticTransaction* txn,
+                                      const TransactionKeyMap* keys, bool pessimistic) {
+  if (pessimistic) lock_mgr_.UnLock(txn, keys, GetEnv(), true);
+  else opt_lock_mgr_.UnLock(txn, keys, GetEnv(), false);
 }
 
 void PessimisticTransactionDB::UnLock(PessimisticTransaction* txn,
                                       const TransactionKeyMap* keys) {
-  lock_mgr_.UnLock(txn, keys, GetEnv());
+  lock_mgr_.UnLock(txn, keys, GetEnv(), true);
 }
 
 void PessimisticTransactionDB::UnLock(PessimisticTransaction* txn,

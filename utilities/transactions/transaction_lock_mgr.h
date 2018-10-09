@@ -70,12 +70,12 @@ class TransactionLockMgr {
   // Attempt to lock key.  If OK status is returned, the caller is responsible
   // for calling UnLock() on this key.
   Status TryLock(PessimisticTransaction* txn, uint32_t column_family_id,
-                 const std::string& key, Env* env, bool exclusive, bool fail_fast = false);
+                 const std::string& key, Env* env, bool exclusive, bool pessimistic = true);
 
   // Unlock a key locked by TryLock().  txn must be the same Transaction that
   // locked this key.
-  void UnLock(const PessimisticTransaction* txn, const TransactionKeyMap* keys,
-              Env* env);
+  void UnLock(const PessimisticTransaction* txn, const TransactionKeyMap* keys, Env* env, bool pessimistic);
+
   void UnLock(PessimisticTransaction* txn, uint32_t column_family_id,
               const std::string& key, Env* env);
 

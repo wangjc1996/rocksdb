@@ -144,12 +144,10 @@ Status TransactionUtil::CheckKeysForConflicts(DBImpl* db_impl,
       const uint8_t key_state = key_iter.second.key_state;
       const SequenceNumber key_seq = key_iter.second.seq;
 
-      if ((key_state & 1) != 0) 
+      if (key_state & 1) 
         result = CheckKey(db_impl, sv, earliest_seq, key_seq, key, cache_only);
 
-      if (!result.ok()) {
-        break;
-      }
+      if (!result.ok()) break;
     }
 
     db_impl->ReturnAndCleanupSuperVersion(cf_id, sv);

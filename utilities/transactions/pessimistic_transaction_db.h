@@ -80,7 +80,11 @@ class PessimisticTransactionDB : public TransactionDB {
   Status TryLock(PessimisticTransaction* txn, uint32_t cfh_id,
                  const std::string& key, bool exclusive);
 
-  Status DoTryLock(PessimisticTransaction* txn, uint32_t cfh_id, const std::string& key, bool exclusive, bool optimistic = false);
+  Status DoTryLock(PessimisticTransaction* txn, uint32_t cfh_id, 
+	const std::string& key, bool exclusive, bool pessimistic = true);
+
+  void DoUnLock(PessimisticTransaction* txn, const TransactionKeyMap* keys, 
+	bool pessimistic = true);
 
   void UnLock(PessimisticTransaction* txn, const TransactionKeyMap* keys);
   void UnLock(PessimisticTransaction* txn, uint32_t cfh_id,
@@ -151,6 +155,7 @@ class PessimisticTransactionDB : public TransactionDB {
   friend class WriteUnpreparedTransactionTest_RecoveryTest_Test;
   friend class WriteUnpreparedTransactionTest_MarkLogWithPrepSection_Test;
   TransactionLockMgr lock_mgr_;
+  TransactionLockMgr opt_lock_mgr_;
   TransactionStateMgr state_mgr_;
 
   // Must be held when adding/dropping column families.

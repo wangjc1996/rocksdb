@@ -291,7 +291,7 @@ bool TransactionLockMgr::IsLockExpired(TransactionID txn_id,
 Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
                                    uint32_t column_family_id,
                                    const std::string& key, Env* env,
-                                   bool exclusive, bool fail_fast) {
+                                   bool exclusive, bool pessimistic) {
   // Lookup lock map for this column family id
   std::shared_ptr<LockMap> lock_map_ptr = GetLockMap(column_family_id);
   LockMap* lock_map = lock_map_ptr.get();
@@ -313,16 +313,15 @@ Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
   int64_t timeout = txn->GetLockTimeout();
 
   return AcquireWithTimeout(txn, lock_map, stripe, column_family_id, key, env,
-                            timeout, lock_info, fail_fast);
+                            timeout, lock_info, pessimistic);
 }
 
 // Helper function for TryLock().
 Status TransactionLockMgr::AcquireWithTimeout(
     PessimisticTransaction* txn, LockMap* lock_map, LockMapStripe* stripe,
     uint32_t column_family_id, const std::string& key, Env* env,
-    int64_t timeout, const LockInfo& lock_info, bool fail_fast) {
-  (void)fail_fast;
-
+    int64_t timeout, const LockInfo& lock_info, bool pessimistic) {
+  (void)pessimistic;
   Status result;
   uint64_t end_time = 0;
 
@@ -663,7 +662,8 @@ void TransactionLockMgr::UnLock(PessimisticTransaction* txn,
 }
 
 void TransactionLockMgr::UnLock(const PessimisticTransaction* txn,
-                                const TransactionKeyMap* key_map, Env* env) {
+                                const TransactionKeyMap* key_map, Env* env, 
+				bool pessimistic) {
   for (auto& key_map_iter : *key_map) {
     uint32_t column_family_id = key_map_iter.first;
     auto& keys = key_map_iter.second;
@@ -684,7 +684,7 @@ void TransactionLockMgr::UnLock(const PessimisticTransaction* txn,
       const std::string& key = key_iter.first;
       const uint8_t key_state = key_iter.second.key_state;
 
-      if ((key_state & 4) != 0) {
+      if ((pessimistic && (key_state & 4)) || (!pessimistic && (key_state & 2))) {
         size_t stripe_num = lock_map->GetStripe(key);
         keys_by_stripe[stripe_num].push_back(&key);
       }

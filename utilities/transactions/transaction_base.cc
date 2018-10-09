@@ -329,7 +329,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
   if (optimistic) {
     s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */);
   } else {
-    s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
+    s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* pessimistic */);
   }
 
   if (s.ok()) {
@@ -349,7 +349,7 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
   if (optimistic) {
     s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
   } else {
-    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* pessimistic */);
   }
 
   if (s.ok()) {
@@ -368,7 +368,7 @@ Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Sl
   if (optimistic) {
     s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
   } else {
-    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* pessimistic */);
   }
 
   if (s.ok()) {

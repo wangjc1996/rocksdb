@@ -88,7 +88,8 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
-  txn_db_impl_->UnLock(this, &GetTrackedKeys());
+  txn_db_impl_->DoUnLock(this, &GetTrackedKeys(), true);
+  txn_db_impl_->DoUnLock(this, &GetTrackedKeys(), false);
   if (expiration_time_ > 0) {
     txn_db_impl_->RemoveExpirableTransaction(txn_id_);
   }
@@ -98,12 +99,18 @@ PessimisticTransaction::~PessimisticTransaction() {
 }
 
 void PessimisticTransaction::Clear() {
-  txn_db_impl_->UnLock(this, &GetTrackedKeys());
+  txn_db_impl_->DoUnLock(this, &GetTrackedKeys(), true /* pessmistic */);
+  txn_db_impl_->DoUnLock(this, &GetTrackedKeys(), false /* pessmistic */);
   TransactionBaseImpl::Clear();
 }
 
 
-Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool skip_validate) {
+Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, 
+						 const Slice& key, 
+						 bool read_only, 
+						 bool exclusive, 
+						 bool pessimistic, 
+						 bool skip_validate) {
   std::string key_str = key.ToString();
   bool previously_locked;
   bool lock_upgrade = false;
@@ -133,7 +140,7 @@ Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& k
   // Lock this key if this transactions hasn't already locked it or we require
   // an upgrade.
   if (!previously_locked || lock_upgrade) {
-    s = txn_db_impl_->DoTryLock(this, cfh_id, key_str, exclusive, fail_fast /* optimistic */);
+    s = txn_db_impl_->DoTryLock(this, cfh_id, key_str, exclusive, pessimistic /* pessimistic */);
   }
 
   SetSnapshotIfNeeded();
@@ -161,7 +168,7 @@ Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& k
     }
   } 
 
-  if (s.ok()) { // fail_fast indicates it's via real tpl
+  if (s.ok() && pessimistic) {
     // We must track all the locked keys so that we can unlock them later. If
     // the key is already locked, this func will update some stats on the
     // tracked key. It could also update the tracked_at_seq if it is lower than
@@ -677,7 +684,6 @@ Status PessimisticTransaction::CheckTransactionForConflicts(DB* db) {
 }
 
 Status PessimisticTransaction::DoLockAll() {
-  // get tracked keys used by occ
   const TransactionKeyMap& key_map = GetTrackedKeys();
 
   for (auto& key_map_iter : key_map) {
@@ -688,11 +694,10 @@ Status PessimisticTransaction::DoLockAll() {
     for (auto& key_iter : keys) {
 	const auto& key = key_iter.first;
 	const uint8_t key_state = key_iter.second.key_state;
-	if (((key_state & 2) != 0) && ((key_state & 4) == 0))
-            s = DoPessimisticLock(cf, key, false, true, false);
+	if (key_state & 2)
+            s = DoPessimisticLock(cf, key, false /* readonly */, true /* exclusive */, false /* pessimistic */);
 	if (!s.ok()) return s;
     }
-    // cfs.push_back(cf);
   }
   return Status::OK();
 }
