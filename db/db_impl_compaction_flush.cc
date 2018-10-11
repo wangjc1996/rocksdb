@@ -1155,7 +1155,6 @@ Status DBImpl::EnableAutoCompaction(
 }
 
 void DBImpl::MaybeScheduleFlushOrCompaction() {
-  return;
   mutex_.AssertHeld();
   if (!opened_successfully_) {
     // Compaction may introduce data race to DB open
