@@ -98,7 +98,11 @@ void StateInfo::DecreaseWrite(bool optimistic) {
   }
 }
 
-TransactionStateMgr::~TransactionStateMgr() {}
+TransactionStateMgr::~TransactionStateMgr() {
+  for (auto& iter : state_maps_) {
+    delete iter.second;
+  } 
+}
 
 size_t StateMap::GetStripe(const std::string& key) const {
   assert(num_stripes_ > 0);
