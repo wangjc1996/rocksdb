@@ -60,12 +60,6 @@ class OptimisticTransaction : public TransactionBaseImpl {
     return Status::OK();
   }
 
-  std::atomic<uint64_t>* DoGetState(uint32_t column_family_id, const std::string& key) override {
-    (void)column_family_id;
-    (void)key;
-    return nullptr;
-  };
-
   Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
                  bool read_only, bool exclusive,
                  bool untracked = false) override;

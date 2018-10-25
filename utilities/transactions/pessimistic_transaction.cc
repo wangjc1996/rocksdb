@@ -697,9 +697,6 @@ Status PessimisticTransaction::DoLockAll() {
   return Status::OK();
 }
 
-std::atomic<uint64_t>* PessimisticTransaction::DoGetState(uint32_t column_family_id, const std::string& key) {
-  return txn_db_impl_->DoGetState(column_family_id, key);
-}
 }  // namespace rocksdb
 
 #endif  // ROCKSDB_LITE

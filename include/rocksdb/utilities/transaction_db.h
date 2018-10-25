@@ -14,6 +14,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/utilities/stackable_db.h"
 #include "rocksdb/utilities/transaction.h"
+#include "rocksdb/utilities/state_info.h"
 
 // Database with Transaction support.
 //
@@ -256,6 +257,7 @@ class TransactionDB : public StackableDB {
   GetLockStatusData() = 0;
   virtual std::vector<DeadlockPath> GetDeadlockInfoBuffer() = 0;
   virtual void SetDeadlockInfoBufferSize(uint32_t target_size) = 0;
+  virtual StateInfoInternal* DoGetState(uint32_t cfh_id, const std::string& key) = 0;
 
  protected:
   // To Create an TransactionDB, call Open()

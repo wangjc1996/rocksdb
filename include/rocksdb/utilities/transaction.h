@@ -489,8 +489,6 @@ class Transaction {
 	return DoDelete(nullptr, key, optimistic);
   }
 
-  virtual std::atomic<uint64_t>* DoGetState(uint32_t cfh_id, const std::string& key) = 0;
-
  protected:
   explicit Transaction(const TransactionDB* /*db*/) {}
   Transaction() : log_number_(0), txn_state_(STARTED) {}

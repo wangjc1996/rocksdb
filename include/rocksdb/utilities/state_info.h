@@ -1,24 +1,42 @@
 #pragma once
-#include <atomic>
-
 namespace rocksdb {
+
+static constexpr uint8_t kTotalStates = 4;
+
+static constexpr uint8_t kOptimisticReadIndex = 0;
+static constexpr uint8_t kOptimisticWriteIndex = 1;
+static constexpr uint8_t kPessimisticReadIndex = 2;
+static constexpr uint8_t kPessimisticWriteIndex = 3;
+
+template <bool read, bool optimistic>
+static constexpr uint8_t GetStateIndex() {
+  return optimistic
+         ? (read ? kOptimisticReadIndex : kOptimisticWriteIndex)
+         : (read ? kPessimisticReadIndex : kPessimisticWriteIndex);
+}
+
+using StateUnit = uint16_t;
+using StateInfoInternal = StateUnit[kTotalStates];
+
 struct StateInfo {
-  StateInfo(std::atomic<uint64_t>* handle) : handle_(handle) {}
+  StateInfo(StateInfoInternal* info) : handle(info) {}
 
-  void IncreaseRead(bool optimistic);
-  void DecreaseRead(bool optimisitc);
-  void IncreaseWrite(bool optimistic);
-  void DecreaseWrite(bool optimisitc);
-  uint64_t Load() const { return handle_->load(); }
+  template <bool read, bool optimistic>
+  inline void IncreaseAccess() {
+    constexpr uint8_t index = GetStateIndex<read, optimistic>();
+#define atomic_inc(P) __sync_add_and_fetch((P), 1)
+    atomic_inc(((StateUnit*)handle) + index);
+#undef atomic_inc
+  }
 
-  private:
-    std::atomic<uint64_t>* handle_;
-    static const uint64_t kBaseMask;
-    static const uint64_t kOptimisticReadMask;
-    static const uint64_t kOptimisticWriteMask;
-    static const uint64_t kPessimisticReadMask;
-    static const uint64_t kPessimisticWriteMask;
-    void IncreaseImpl(uint64_t mask, size_t offset);
-    void DecreaseImpl(uint64_t mask, size_t offset);
+  template <bool read, bool optimistic>
+  inline void DecreaseAccess() {
+    constexpr uint8_t index = GetStateIndex<read, optimistic>();
+#define atomic_dec(P) __sync_add_and_fetch((P), -1) 
+    atomic_dec(((StateUnit*)handle) + index);
+#undef atomic_dec
+  }
+
+  StateInfoInternal* handle;
 };
 }
