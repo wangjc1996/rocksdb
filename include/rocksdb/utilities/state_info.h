@@ -19,7 +19,12 @@ using StateUnit = uint16_t;
 using StateInfoInternal = StateUnit[kTotalStates];
 
 struct StateInfo {
+  StateInfoInternal* handle;
+
   StateInfo(StateInfoInternal* info) : handle(info) {}
+  StateInfo() : StateInfo(nullptr) {}
+
+  void SetHandle(StateInfoInternal* h) { handle = h; }
 
   template <bool read, bool optimistic>
   inline void IncreaseAccess() {
@@ -36,7 +41,5 @@ struct StateInfo {
     atomic_dec(((StateUnit*)handle) + index);
 #undef atomic_dec
   }
-
-  StateInfoInternal* handle;
 };
 }
