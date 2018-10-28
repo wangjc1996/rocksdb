@@ -12,7 +12,7 @@ public:
   StateInfoInternal* GetState(uint32_t column_family_id, const std::string& key);
 
 private:
-  static constexpr size_t kReservedSlots = 8192; 
+  static constexpr size_t kReservedSlots = 2621440;  // => total size = 4 * 2 * 2621440 = 20 MB
   StateInfoInternal states_[kReservedSlots];
 
   // No copying allowed
