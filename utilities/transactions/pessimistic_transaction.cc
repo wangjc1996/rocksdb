@@ -689,7 +689,7 @@ Status PessimisticTransaction::DoLockAll() {
 	const auto& key = key_iter.first;
 	const uint8_t key_state = key_iter.second.key_state;
 	if (((key_state & 2) != 0) && ((key_state & 4) == 0))
-            s = DoPessimisticLock(cf, key, false, true, false);
+            s = DoPessimisticLock(cf, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
 	if (!s.ok()) return s;
     }
     // cfs.push_back(cf);

@@ -351,7 +351,7 @@ Status TransactionLockMgr::AcquireWithTimeout(
     PessimisticTransaction* txn, LockMap* lock_map, LockMapStripe* stripe,
     uint32_t column_family_id, const std::string& key, Env* env,
     int64_t timeout, const LockInfo& lock_info, bool fail_fast) {
-  (void)fail_fast;
+//  (void)fail_fast;
 
   Status result;
   uint64_t end_time = 0;
@@ -379,10 +379,10 @@ Status TransactionLockMgr::AcquireWithTimeout(
   result = AcquireLocked(lock_map, stripe, key, env, lock_info,
                          &expire_time_hint, &wait_ids);
 
-  // if (!result.ok() && fail_fast) {
-    // stripe->stripe_mutex->UnLock();
-    // return result;
-  // }
+   if (!result.ok() && fail_fast) {
+     stripe->stripe_mutex->UnLock();
+     return result;
+   }
 
   if (!result.ok() && timeout != 0) {
     PERF_TIMER_GUARD(key_lock_wait_time);
