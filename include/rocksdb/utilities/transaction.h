@@ -469,27 +469,31 @@ class Transaction {
   uint64_t GetId() { return id_; }
 
   virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
-               const Slice& value, bool optimistic = false) = 0;
+               const Slice& value, bool optimistic = false, bool conflict_piece = false) = 0;
 
   Status DoPut(const Slice& key,
                const Slice& value, bool optimistic = false) {
     return DoPut(nullptr, key, value, optimistic);
   }
 
-  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false) = 0; 
+  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, bool conflict_piece = false) = 0;
 
   Status DoGet(const ReadOptions& options, const Slice& key,
                      std::string* value, bool optimistic = false) {
     return DoGet(options, nullptr, key, value, optimistic);
   }
 
-  virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false) = 0; 
+  virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false, bool conflict_piece = false) = 0;
 
   Status DoDelete(const Slice& key, bool optimistic = false) {
 	return DoDelete(nullptr, key, optimistic);
   }
 
   virtual std::atomic<uint64_t>* DoGetState(uint32_t cfh_id, const std::string& key) = 0;
+
+  virtual Status PreprocessingPiece() = 0;
+
+  virtual Status CommitPiece(ColumnFamilyHandle* column_family, const Slice& key, const Slice& value) = 0;
 
  protected:
   explicit Transaction(const TransactionDB* /*db*/) {}

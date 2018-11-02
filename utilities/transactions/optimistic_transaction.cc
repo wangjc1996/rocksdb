@@ -126,6 +126,17 @@ Status OptimisticTransaction::SetName(const TransactionName& /* unused */) {
   return Status::InvalidArgument("Optimistic transactions cannot be named.");
 }
 
+Status OptimisticTransaction::PreprocessingPiece() {
+  return Status::OK();
+}
+
+Status OptimisticTransaction::CommitPiece(ColumnFamilyHandle *column_family, const Slice &key, const Slice &value) {
+  (void) column_family;
+  (void) key;
+  (void) value;
+  return Status::OK();
+}
+
 }  // namespace rocksdb
 
 #endif  // ROCKSDB_LITE

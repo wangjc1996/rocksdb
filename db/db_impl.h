@@ -792,6 +792,12 @@ class DBImpl : public DB {
   // Actual implementation of Close()
   Status CloseImpl();
 
+  Status Add(ColumnFamilyHandle* column_family, const Slice &key, PessimisticTransaction *txn, SequenceNumber seq, TransactionID txn_id);
+
+  PessimisticTransaction *GetLatestAccess(ColumnFamilyHandle* column_family, const Slice& key);
+
+  Status Remove(uint32_t column_family_id, const Slice &key, TransactionID txn_id);
+
  private:
   friend class DB;
   friend class InternalStats;

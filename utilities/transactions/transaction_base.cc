@@ -315,7 +315,7 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
 }
 
 Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyHandle* column_family,
-		const Slice& key, std::string* value, bool optimistic) {
+		const Slice& key, std::string* value, bool optimistic, bool conflict_piece) {
   assert(value != nullptr);
   PinnableSlice pinnable_val(value);
   assert(!pinnable_val.IsPinned());
@@ -326,10 +326,12 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 
   Status s;
 
-  if (optimistic) {
-    s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */);
-  } else {
-    s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
+  if (conflict_piece) {
+    if (optimistic) {
+      s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */);
+    } else {
+      s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
+    }
   }
 
   if (s.ok()) {
@@ -343,13 +345,15 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 }
 
 Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
-                                const Slice& key, const Slice& value, bool optimistic) {
+                                const Slice& key, const Slice& value, bool optimistic, bool conflict_piece) {
   Status s;
 
-  if (optimistic) {
-    s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
-  } else {
-    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+  if (conflict_piece) {
+    if (optimistic) {
+      s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
+    } else {
+      s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+    }
   }
 
   if (s.ok()) {
@@ -362,13 +366,15 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
   return s;
 }
 
-Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic) {
+Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic, bool conflict_piece) {
   Status s;
 
-  if (optimistic) {
-    s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
-  } else {
-    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+  if (conflict_piece) {
+    if (optimistic) {
+      s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
+    } else {
+      s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+    }
   }
 
   if (s.ok()) {

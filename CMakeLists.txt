@@ -463,6 +463,7 @@ set(SOURCES
         db/compaction_picker.cc
         db/compaction_picker_universal.cc
         db/convenience.cc
+        db/access_list.cc
         db/db_filesnapshot.cc
         db/db_impl.cc
         db/db_impl_write.cc

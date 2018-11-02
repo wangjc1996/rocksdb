@@ -112,6 +112,10 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   int64_t GetDeadlockDetectDepth() const { return deadlock_detect_depth_; }
 
+  Status PreprocessingPiece() override;
+
+  Status CommitPiece(ColumnFamilyHandle* column_family, const Slice& key, const Slice& value) override;
+
  protected:
   std::atomic<uint64_t>* DoGetState(uint32_t column_family_id, const std::string& key) override;
 

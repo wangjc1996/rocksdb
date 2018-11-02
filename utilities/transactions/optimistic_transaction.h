@@ -46,6 +46,10 @@ class OptimisticTransaction : public TransactionBaseImpl {
 
   Status SetName(const TransactionName& name) override;
 
+  Status PreprocessingPiece() override;
+
+  Status CommitPiece(ColumnFamilyHandle* column_family, const Slice& key, const Slice& value) override;
+
  protected:
   Status DoPessimisticLock(uint32_t cfh_id, const Slice& key,
                  bool read_only, bool exclusive, bool fail_fast,

@@ -700,6 +700,32 @@ Status PessimisticTransaction::DoLockAll() {
 std::atomic<uint64_t>* PessimisticTransaction::DoGetState(uint32_t column_family_id, const std::string& key) {
   return txn_db_impl_->DoGetState(column_family_id, key);
 }
+
+Status PessimisticTransaction::PreprocessingPiece() {
+  // TODO - wait phase
+  return Status::OK();
+}
+
+Status PessimisticTransaction::CommitPiece(ColumnFamilyHandle *column_family, const Slice &key, const Slice &value) {
+  Status s = DoLockAll();
+
+  if (!s.ok()) {
+    return s;
+  }
+
+  // TODO -validation
+  // TODO -others
+  (void) column_family;
+  (void) key;
+  (void) value;
+
+  txn_db_impl_->UnLock(this, &GetTrackedKeys()); //TODO - clear lock & tracked map
+
+  // TODO - make piece as finish
+
+  return s;
+}
+
 }  // namespace rocksdb
 
 #endif  // ROCKSDB_LITE

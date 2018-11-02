@@ -1498,4 +1498,21 @@ Status DB::Merge(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   }
   return Write(opt, &batch);
 }
+
+Status DBImpl::Add(ColumnFamilyHandle* column_family, const Slice &key, PessimisticTransaction *txn, SequenceNumber seq, TransactionID txn_id) {
+  uint32_t id = 0;
+  if (column_family != nullptr) {
+    id = column_family->GetID();
+  }
+  auto *cfd = versions_->GetColumnFamilySet()->GetColumnFamily(id);
+  auto *access_list = cfd->access_list();
+  return access_list->Add(key, txn, seq, txn_id);
+}
+
+Status DBImpl::Remove(uint32_t column_family_id, const Slice &key, TransactionID txn_id) {
+  auto *cfd = versions_->GetColumnFamilySet()->GetColumnFamily(column_family_id);
+  auto *dirty_buffer = cfd->access_list();
+  return dirty_buffer->Remove(key, txn_id);
+}
+
 }  // namespace rocksdb

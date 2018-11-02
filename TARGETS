@@ -71,6 +71,7 @@ cpp_library(
         "cache/clock_cache.cc",
         "cache/lru_cache.cc",
         "cache/sharded_cache.cc",
+        "db/access_list.cc",
         "db/builder.cc",
         "db/c.cc",
         "db/column_family.cc",

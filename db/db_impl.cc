@@ -3132,5 +3132,16 @@ Status DBImpl::EndTrace() {
   return s;
 }
 
+PessimisticTransaction *DBImpl::GetLatestAccess(ColumnFamilyHandle *column_family, const Slice &key) {
+  uint32_t id = 0;
+  if (column_family != nullptr) {
+    id = column_family->GetID();
+  }
+  auto *cfd = versions_->GetColumnFamilySet()->GetColumnFamily(id);
+  auto *access_list = cfd->access_list();
+
+  return access_list->Get(key);
+}
+
 #endif  // ROCKSDB_LITE
 }  // namespace rocksdb
