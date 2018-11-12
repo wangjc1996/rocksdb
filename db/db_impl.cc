@@ -454,6 +454,11 @@ Status DBImpl::CloseImpl() { return CloseHelper(); }
 DBImpl::~DBImpl() {
   if (!closed_) {
     closed_ = true;
+//    Status s = env_->DeleteDir(immutable_db_options_.wal_dir);
+    Status s;
+    for (auto& log : logs_) {
+      s = env_->DeleteFile(LogFileName(immutable_db_options_.wal_dir, log.number));
+    }
     CloseHelper();
   }
 }
