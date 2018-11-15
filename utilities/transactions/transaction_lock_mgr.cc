@@ -37,15 +37,22 @@ struct LockInfo {
 
   // Transaction locks are not valid after this time in us
   uint64_t expiration_time;
+  uint32_t cur_t;
+  uint32_t next_t;
+  uint32_t ref_cnt;
 
   LockInfo(TransactionID id, uint64_t time, bool ex)
-      : exclusive(ex), expiration_time(time) {
+      : exclusive(ex), expiration_time(time), cur_t(1), next_t(1), ref_cnt(1) {
     txn_ids.push_back(id);
   }
+
   LockInfo(const LockInfo& lock_info)
       : exclusive(lock_info.exclusive),
         txn_ids(lock_info.txn_ids),
-        expiration_time(lock_info.expiration_time) {}
+        expiration_time(lock_info.expiration_time),
+        cur_t(lock_info.cur_t),
+        next_t(lock_info.next_t),
+        ref_cnt(lock_info.ref_cnt) {}
 };
 
 struct LockMapStripe {
@@ -376,8 +383,9 @@ Status TransactionLockMgr::AcquireWithTimeout(
   // Acquire lock if we are able to
   uint64_t expire_time_hint = 0;
   autovector<TransactionID> wait_ids;
+  uint32_t ticket = 0;
   result = AcquireLocked(lock_map, stripe, key, env, lock_info,
-                         &expire_time_hint, &wait_ids);
+                         &expire_time_hint, &wait_ids, &ticket);
 
   // if (!result.ok() && fail_fast) {
     // stripe->stripe_mutex->UnLock();
@@ -448,7 +456,7 @@ Status TransactionLockMgr::AcquireWithTimeout(
 
       if (result.ok() || result.IsTimedOut()) {
         result = AcquireLocked(lock_map, stripe, key, env, lock_info,
-                               &expire_time_hint, &wait_ids);
+                               &expire_time_hint, &wait_ids, &ticket);
       }
     } while (!result.ok() && !timed_out);
   }
@@ -568,7 +576,10 @@ Status TransactionLockMgr::AcquireLocked(LockMap* lock_map,
                                          const std::string& key, Env* env,
                                          const LockInfo& txn_lock_info,
                                          uint64_t* expire_time,
-                                         autovector<TransactionID>* txn_ids) {
+                                         autovector<TransactionID>* txn_ids,
+                                         uint32_t* ticket) {
+  (void) expire_time;
+  (void) env;
   assert(txn_lock_info.txn_ids.size() == 1);
 
   Status result;
@@ -577,40 +588,68 @@ Status TransactionLockMgr::AcquireLocked(LockMap* lock_map,
   if (stripe_iter != stripe->keys.end()) {
     // Lock already held
     LockInfo& lock_info = stripe_iter->second;
-    assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
+    // assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
 
-    if (lock_info.exclusive || txn_lock_info.exclusive) {
-      if (lock_info.txn_ids.size() == 1 &&
-          lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]) {
-        // The list contains one txn and we're it, so just take it.
-        lock_info.exclusive = txn_lock_info.exclusive;
+    bool new_one = (*ticket == 0);
+    bool match = (lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]);
+
+    if (new_one) lock_info.ref_cnt++;
+
+    if (lock_info.txn_ids.size() == 0) {
+      if (new_one) {
+        *ticket = lock_info.next_t;
+        if (txn_lock_info.exclusive) lock_info.next_t++;
+      }
+
+      if (*ticket <= lock_info.cur_t) {
+        lock_info.exclusive       = txn_lock_info.exclusive;
+        lock_info.expiration_time = txn_lock_info.expiration_time;
+        lock_info.txn_ids.push_back(txn_lock_info.txn_ids[0]);
+      } else {
+        result = Status::TimedOut(Status::SubCode::kLockTimeout);
+      }
+    } else if (lock_info.exclusive) {
+      if (match) {
         lock_info.expiration_time = txn_lock_info.expiration_time;
       } else {
-        // Check if it's expired. Skips over txn_lock_info.txn_ids[0] in case
-        // it's there for a shared lock with multiple holders which was not
-        // caught in the first case.
-        if (IsLockExpired(txn_lock_info.txn_ids[0], lock_info, env,
-                          expire_time)) {
-          // lock is expired, can steal it
-          lock_info.txn_ids = txn_lock_info.txn_ids;
-          lock_info.exclusive = txn_lock_info.exclusive;
-          lock_info.expiration_time = txn_lock_info.expiration_time;
-          // lock_cnt does not change
-        } else {
-          result = Status::TimedOut(Status::SubCode::kLockTimeout);
-          *txn_ids = lock_info.txn_ids;
+        if (new_one) {
+          *ticket = lock_info.next_t;
+          if (txn_lock_info.exclusive) lock_info.next_t++;
         }
+
+        result = Status::TimedOut(Status::SubCode::kLockTimeout);
       }
     } else {
-      // We are requesting shared access to a shared lock, so just grant it.
-      lock_info.txn_ids.push_back(txn_lock_info.txn_ids[0]);
-      // Using std::max means that expiration time never goes down even when
-      // a transaction is removed from the list. The correct solution would be
-      // to track expiry for every transaction, but this would also work for
-      // now.
-      lock_info.expiration_time =
-          std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
+      if (new_one) {
+        *ticket = lock_info.next_t;
+        if (txn_lock_info.exclusive) lock_info.next_t++;
+      }
+
+      if (txn_lock_info.exclusive) {
+        if (match && lock_info.txn_ids.size() == 1) { 
+          lock_info.exclusive       = true;
+          lock_info.expiration_time = txn_lock_info.expiration_time;
+        } else {
+          result = Status::TimedOut(Status::SubCode::kLockTimeout);
+        }
+      } else {
+        auto& txns = lock_info.txn_ids;
+        auto txn_it = std::find(txns.begin(), 
+                                txns.end(), 
+                                txn_lock_info.txn_ids[0]);
+        if (txn_it != txns.end()) {
+          lock_info.expiration_time =
+              std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
+        } else if (*ticket <= lock_info.cur_t) {
+          lock_info.txn_ids.push_back(txn_lock_info.txn_ids[0]);
+          lock_info.expiration_time =
+              std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
+        } else {
+          result = Status::TimedOut(Status::SubCode::kLockTimeout);
+        }
+      }
     }
+    if (!result.ok()) *txn_ids = lock_info.txn_ids;
   } else {  // Lock not held.
     // Check lock limit
     if (max_num_locks_ > 0 &&
@@ -618,13 +657,126 @@ Status TransactionLockMgr::AcquireLocked(LockMap* lock_map,
       result = Status::Busy(Status::SubCode::kLockLimit);
     } else {
       // acquire lock
-      stripe->keys.insert({key, txn_lock_info});
+      stripe->keys.emplace(key, txn_lock_info);
 
       // Maintain lock count if there is a limit on the number of locks
       if (max_num_locks_) {
         lock_map->lock_cnt++;
       }
     }
+  }
+
+  {
+    // if (lock_info.txn_ids.size() == 0) { // not locked
+      // if (*ticket == 0) // newly come (so lucky)
+        // // increase next_t to block following reader
+        // if (txn_lock_info.exclusive) *ticket = lock_info.next_t++; 
+        // else *ticket = lock_info.next_t; // just get my ticket
+
+      // if (*ticket <= lock_info.cur_t) { // my turn?
+        // lock_info.exclusive = txn_lock_info.exclusive;
+        // lock_info.expiration_time = txn_lock_info.expiration_time;
+        // lock_info.txn_ids.push_back(txn_lock_info.txn_ids[0]);
+      // } else { // continue waiting
+        // result = Status::TimedOut(Status::SubCode::kLockTimeout);
+      // }
+    // } else if (lock_info.exclusive) { // key is being locked exclusively
+      // if (txn_lock_info.exclusive) { // try to acquire a write lock
+        // if (match) { // re-acquisition, nothing happens
+          // lock_info.expiration_time = txn_lock_info.expiration_time;
+        // } else { // queue myself
+          // if (*ticket == 0) *ticket = lock_info.next_t++;
+          // result = Status::TimedOut(Status::SubCode::kLockTimeout);
+        // }
+      // } else { // try to acquire a read lock
+        // if (match) { // re-acquisition, nothing happends
+          // lock_info.expiration_time = txn_lock_info.expiration_time;
+        // } else { // queue myself
+          // if (*ticket == 0) *ticket = lock_info.next_t;
+          // result = Status::TimedOut(Status::SubCode::kLockTimeout);
+        // }
+      // }
+    // } else { // !lock_info.exclusive // being locked shared
+      // if (txn_lock_info.exclusive) { // try to acquire a write lock
+        // // a read lock is held only by me, just upgrade it
+        // if (match && lock_info.txn_ids.size() == 1) { 
+          // if (*ticket == 0) lock_info.next_t++;
+
+          // lock_info.exclusive = true;
+          // lock_info.expiration_time = txn_lock_info.expiration_time;
+        // } else { // failed to upgrade
+          // if (*ticket == 0) *ticket = lock_info.next_t++;
+          // result = Status::TimedOut(Status::SubCode::kLockTimeout);
+        // }
+      // } else { // try to acquire a read lock
+        // if (*ticket == 0) *ticket = lock_info.next_t;
+
+        // auto txn_it = std::find(txns.begin(), txns.end(), txn_id);
+        // if (txn_it != txns.end()) { // we have held it
+          // lock_info.expiration_time =
+              // std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
+        // } else if (*ticket <= lock_info.cur_t) {
+          // lock_info.txn_ids.push_back(txn_lock_info.txn_ids[0]);
+          // lock_info.expiration_time =
+              // std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
+        // } else {
+          // result = Status::TimedOut(Status::SubCode::kLockTimeout);
+        // }
+      // }
+    // }
+  }
+  {
+  // auto stripe_iter = stripe->keys.find(key);
+  // if (stripe_iter != stripe->keys.end()) {
+    // // Lock already held
+    // LockInfo& lock_info = stripe_iter->second;
+    // if (lock_info.exclusive || txn_lock_info.exclusive) {
+      // if (lock_info.txn_ids.size() == 1 &&
+          // lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]) {
+        // // The list contains one txn and we're it, so just take it.
+        // lock_info.exclusive = txn_lock_info.exclusive;
+        // lock_info.expiration_time = txn_lock_info.expiration_time;
+      // } else {
+        // // Check if it's expired. Skips over txn_lock_info.txn_ids[0] in case
+        // // it's there for a shared lock with multiple holders which was not
+        // // caught in the first case.
+        // if (IsLockExpired(txn_lock_info.txn_ids[0], lock_info, env,
+                          // expire_time)) {
+          // // lock is expired, can steal it
+          // lock_info.txn_ids = txn_lock_info.txn_ids;
+          // lock_info.exclusive = txn_lock_info.exclusive;
+          // lock_info.expiration_time = txn_lock_info.expiration_time;
+          // // lock_cnt does not change
+        // } else {
+          // result = Status::TimedOut(Status::SubCode::kLockTimeout);
+          // *txn_ids = lock_info.txn_ids;
+        // }
+      // }
+    // } else {
+      // // We are requesting shared access to a shared lock, so just grant it.
+      // lock_info.txn_ids.push_back(txn_lock_info.txn_ids[0]);
+      // // Using std::max means that expiration time never goes down even when
+      // // a transaction is removed from the list. The correct solution would be
+      // // to track expiry for every transaction, but this would also work for
+      // // now.
+      // lock_info.expiration_time =
+          // std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
+    // }
+  // } else {  // Lock not held.
+    // // Check lock limit
+    // if (max_num_locks_ > 0 &&
+        // lock_map->lock_cnt.load(std::memory_order_acquire) >= max_num_locks_) {
+      // result = Status::Busy(Status::SubCode::kLockLimit);
+    // } else {
+      // // acquire lock
+      // stripe->keys.insert({key, txn_lock_info});
+
+      // // Maintain lock count if there is a limit on the number of locks
+      // if (max_num_locks_) {
+        // lock_map->lock_cnt++;
+      // }
+    // }
+  // }
   }
 
   return result;
@@ -697,11 +849,13 @@ void TransactionLockMgr::UnLockKey(const PessimisticTransaction* txn,
 
   auto stripe_iter = stripe->keys.find(key);
   if (stripe_iter != stripe->keys.end()) {
-    auto& txns = stripe_iter->second.txn_ids;
+    auto& lock_info = stripe_iter->second;
+    auto& txns = lock_info.txn_ids;
     auto txn_it = std::find(txns.begin(), txns.end(), txn_id);
     // Found the key we locked.  unlock it.
     if (txn_it != txns.end()) {
-      if (txns.size() == 1) {
+      lock_info.ref_cnt--;
+      if (lock_info.ref_cnt == 0) { // nobody is waiting?
         stripe->keys.erase(stripe_iter);
       } else {
         auto last_it = txns.end() - 1;
@@ -709,6 +863,7 @@ void TransactionLockMgr::UnLockKey(const PessimisticTransaction* txn,
           *txn_it = *last_it;
         }
         txns.pop_back();
+        if (lock_info.exclusive) lock_info.cur_t++;
       }
 
       if (max_num_locks_ > 0) {

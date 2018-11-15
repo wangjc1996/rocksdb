@@ -137,7 +137,8 @@ class TransactionLockMgr {
   Status AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
                        const std::string& key, Env* env,
                        const LockInfo& lock_info, uint64_t* wait_time,
-                       autovector<TransactionID>* txn_ids);
+                       autovector<TransactionID>* txn_ids,
+                       uint32_t* ticket);
 
   Status GetLockStatus(LockMapStripe* stripe, const std::string& key, Env* env, int64_t timeout, const LockInfo& lock_info);
 
