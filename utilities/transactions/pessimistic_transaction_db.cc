@@ -384,6 +384,13 @@ Status PessimisticTransactionDB::DoTryLock(PessimisticTransaction* txn,
   return lock_mgr_.TryLock(txn, cfh_id, key, GetEnv(), exclusive, fail_fast);
 }
 
+Status PessimisticTransactionDB::CheckLock(PessimisticTransaction* txn,
+                                           uint32_t cfh_id,
+                                           const std::string& key,
+                                           bool exclusive) {
+  return lock_mgr_.CheckLock(txn, cfh_id, key, GetEnv(), exclusive);
+}
+
 void PessimisticTransactionDB::UnLock(PessimisticTransaction* txn,
                                       const TransactionKeyMap* keys) {
   lock_mgr_.UnLock(txn, keys, GetEnv());

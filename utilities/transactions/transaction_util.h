@@ -39,6 +39,8 @@ using TransactionKeyMap =
 class DBImpl;
 struct SuperVersion;
 class WriteBatchWithIndex;
+class PessimisticTransaction;
+class PessimisticTransactionDB;
 
 class TransactionUtil {
  public:
@@ -70,6 +72,11 @@ class TransactionUtil {
                                       const TransactionKeyMap& keys,
                                       bool cache_only);
 
+  static Status CheckKeysForConflicts(PessimisticTransaction* txn,
+                                      PessimisticTransactionDB* txn_db_impl,
+                                      DBImpl* db_impl,
+                                      const TransactionKeyMap& keys,
+                                      bool cache_only);
  private:
   static Status CheckKey(DBImpl* db_impl, SuperVersion* sv,
                          SequenceNumber earliest_seq, SequenceNumber snap_seq,

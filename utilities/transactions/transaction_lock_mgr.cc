@@ -316,6 +316,36 @@ Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
                             timeout, lock_info, fail_fast);
 }
 
+Status TransactionLockMgr::CheckLock(PessimisticTransaction* txn,
+                                     uint32_t column_family_id,
+                                     const std::string& key, Env* env,
+                                     bool exclusive) {
+  // Aimed to check the record is locked with write lock
+  assert(exclusive);
+
+  // Lookup lock map for this column family id
+  std::shared_ptr<LockMap> lock_map_ptr = GetLockMap(column_family_id);
+  LockMap* lock_map = lock_map_ptr.get();
+  if (lock_map == nullptr) {
+    char msg[255];
+    snprintf(msg, sizeof(msg), "Column family id not found: %" PRIu32,
+             column_family_id);
+
+    return Status::InvalidArgument(msg);
+  }
+
+  // Need to lock the mutex for the stripe that this key hashes to
+  size_t stripe_num = lock_map->GetStripe(key);
+  assert(lock_map->lock_map_stripes_.size() > stripe_num);
+  LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
+
+  LockInfo lock_info(txn->GetID(), txn->GetExpirationTime(), exclusive);
+
+  int64_t timeout = txn->GetLockTimeout();
+
+  return GetLockStatus(stripe, key, env, timeout, lock_info);
+}
+
 // Helper function for TryLock().
 Status TransactionLockMgr::AcquireWithTimeout(
     PessimisticTransaction* txn, LockMap* lock_map, LockMapStripe* stripe,
@@ -596,6 +626,60 @@ Status TransactionLockMgr::AcquireLocked(LockMap* lock_map,
       }
     }
   }
+
+  return result;
+}
+
+// Helper function for CheckLock().
+Status TransactionLockMgr::GetLockStatus(LockMapStripe* stripe,
+                                         const std::string& key, Env* env,
+                                         int64_t timeout, const LockInfo& txn_lock_info) {
+  Status result;
+
+  if (timeout < 0) {
+    // If timeout is negative, we wait indefinitely to acquire the lock
+    result = stripe->stripe_mutex->Lock();
+  } else {
+    result = stripe->stripe_mutex->TryLockFor(timeout);
+  }
+
+  if (!result.ok()) {
+    // failed to acquire mutex
+    return result;
+  }
+
+  // Acquire lock if we are able to
+  uint64_t expire_time_hint = 0;
+
+  assert(txn_lock_info.txn_ids.size() == 1);
+
+  // Check if this key is already locked
+  auto stripe_iter = stripe->keys.find(key);
+  if (stripe_iter != stripe->keys.end()) {
+    // Lock already held
+    LockInfo& lock_info = stripe_iter->second;
+    assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
+    assert(txn_lock_info.exclusive);
+
+    if (lock_info.txn_ids.size() == 1 &&
+        lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]) {
+      // The list contains one txn and we're it, so just take it.
+      result = Status::OK();
+    } else {
+      // Check if it's expired. Skips over txn_lock_info.txn_ids[0] in case
+      // it's there for a shared lock with multiple holders which was not
+      // caught in the first case.
+      if (IsLockExpired(txn_lock_info.txn_ids[0], lock_info, env,
+                        &expire_time_hint)) {
+        // lock is expired, can steal it
+        result = Status::OK();
+      } else {
+        result = Status::Busy();
+      }
+    }
+  }
+
+  stripe->stripe_mutex->UnLock();
 
   return result;
 }

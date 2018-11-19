@@ -72,6 +72,11 @@ class TransactionLockMgr {
   Status TryLock(PessimisticTransaction* txn, uint32_t column_family_id,
                  const std::string& key, Env* env, bool exclusive, bool fail_fast = false);
 
+  // Check a key is locked or not
+  // return Busy for locked, OK for unlocked
+  Status CheckLock(PessimisticTransaction* txn, uint32_t column_family_id,
+                 const std::string& key, Env* env, bool exclusive);
+
   // Unlock a key locked by TryLock().  txn must be the same Transaction that
   // locked this key.
   void UnLock(const PessimisticTransaction* txn, const TransactionKeyMap* keys,
@@ -133,6 +138,8 @@ class TransactionLockMgr {
                        const std::string& key, Env* env,
                        const LockInfo& lock_info, uint64_t* wait_time,
                        autovector<TransactionID>* txn_ids);
+
+  Status GetLockStatus(LockMapStripe* stripe, const std::string& key, Env* env, int64_t timeout, const LockInfo& lock_info);
 
   void UnLockKey(const PessimisticTransaction* txn, const std::string& key,
                  LockMapStripe* stripe, LockMap* lock_map, Env* env);
