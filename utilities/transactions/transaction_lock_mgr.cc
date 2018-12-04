@@ -661,20 +661,22 @@ Status TransactionLockMgr::GetLockStatus(LockMapStripe* stripe,
     assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
     assert(txn_lock_info.exclusive);
 
-    if (lock_info.txn_ids.size() == 1 &&
-        lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]) {
-      // The list contains one txn and we're it, so just take it.
-      result = Status::OK();
-    } else {
-      // Check if it's expired. Skips over txn_lock_info.txn_ids[0] in case
-      // it's there for a shared lock with multiple holders which was not
-      // caught in the first case.
-      if (IsLockExpired(txn_lock_info.txn_ids[0], lock_info, env,
-                        &expire_time_hint)) {
-        // lock is expired, can steal it
+    if (lock_info.exclusive) {
+      if (lock_info.txn_ids.size() == 1 &&
+          lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]) {
+        // The list contains one txn and we're it, so just take it.
         result = Status::OK();
       } else {
-        result = Status::Busy();
+        // Check if it's expired. Skips over txn_lock_info.txn_ids[0] in case
+        // it's there for a shared lock with multiple holders which was not
+        // caught in the first case.
+        if (IsLockExpired(txn_lock_info.txn_ids[0], lock_info, env,
+                          &expire_time_hint)) {
+          // lock is expired, can steal it
+          result = Status::OK();
+        } else {
+          result = Status::Busy();
+        }
       }
     }
   }
