@@ -324,41 +324,41 @@ Status DBImpl::CloseHelper() {
   // CancelAllBackgroundWork called with false means we just set the shutdown
   // marker. After this we do a variant of the waiting and unschedule work
   // (to consider: moving all the waiting into CancelAllBackgroundWork(true))
-//  CancelAllBackgroundWork(false);
-//  int bottom_compactions_unscheduled =
-//      env_->UnSchedule(this, Env::Priority::BOTTOM);
-//  int compactions_unscheduled = env_->UnSchedule(this, Env::Priority::LOW);
-//  int flushes_unscheduled = env_->UnSchedule(this, Env::Priority::HIGH);
+  CancelAllBackgroundWork(false);
+  int bottom_compactions_unscheduled =
+      env_->UnSchedule(this, Env::Priority::BOTTOM);
+  int compactions_unscheduled = env_->UnSchedule(this, Env::Priority::LOW);
+  int flushes_unscheduled = env_->UnSchedule(this, Env::Priority::HIGH);
   Status ret;
   mutex_.Lock();
-//  bg_bottom_compaction_scheduled_ -= bottom_compactions_unscheduled;
-//  bg_compaction_scheduled_ -= compactions_unscheduled;
-//  bg_flush_scheduled_ -= flushes_unscheduled;
-//
-//  // Wait for background work to finish
-//  while (bg_bottom_compaction_scheduled_ || bg_compaction_scheduled_ ||
-//         bg_flush_scheduled_ || bg_purge_scheduled_ ||
-//         pending_purge_obsolete_files_) {
-//    TEST_SYNC_POINT("DBImpl::~DBImpl:WaitJob");
-//    bg_cv_.Wait();
-//  }
-//  TEST_SYNC_POINT_CALLBACK("DBImpl::CloseHelper:PendingPurgeFinished",
-//                           &files_grabbed_for_purge_);
-//  EraseThreadStatusDbInfo();
-//  flush_scheduler_.Clear();
-//
-//  while (!flush_queue_.empty()) {
-//    auto cfd = PopFirstFromFlushQueue();
-//    if (cfd->Unref()) {
-//      delete cfd;
-//    }
-//  }
-//  while (!compaction_queue_.empty()) {
-//    auto cfd = PopFirstFromCompactionQueue();
-//    if (cfd->Unref()) {
-//      delete cfd;
-//    }
-//  }
+  bg_bottom_compaction_scheduled_ -= bottom_compactions_unscheduled;
+  bg_compaction_scheduled_ -= compactions_unscheduled;
+  bg_flush_scheduled_ -= flushes_unscheduled;
+
+  // Wait for background work to finish
+  while (bg_bottom_compaction_scheduled_ || bg_compaction_scheduled_ ||
+         bg_flush_scheduled_ || bg_purge_scheduled_ ||
+         pending_purge_obsolete_files_) {
+    TEST_SYNC_POINT("DBImpl::~DBImpl:WaitJob");
+    bg_cv_.Wait();
+  }
+  TEST_SYNC_POINT_CALLBACK("DBImpl::CloseHelper:PendingPurgeFinished",
+                           &files_grabbed_for_purge_);
+  EraseThreadStatusDbInfo();
+  flush_scheduler_.Clear();
+
+  while (!flush_queue_.empty()) {
+    auto cfd = PopFirstFromFlushQueue();
+    if (cfd->Unref()) {
+      delete cfd;
+    }
+  }
+  while (!compaction_queue_.empty()) {
+    auto cfd = PopFirstFromCompactionQueue();
+    if (cfd->Unref()) {
+      delete cfd;
+    }
+  }
 
   if (default_cf_handle_ != nullptr) {
     // we need to delete handle outside of lock because it does its own locking
@@ -454,11 +454,6 @@ Status DBImpl::CloseImpl() { return CloseHelper(); }
 DBImpl::~DBImpl() {
   if (!closed_) {
     closed_ = true;
-//    Status s = env_->DeleteDir(immutable_db_options_.wal_dir);
-    Status s;
-    for (auto& log : logs_) {
-      s = env_->DeleteFile(LogFileName(immutable_db_options_.wal_dir, log.number));
-    }
     CloseHelper();
   }
 }
