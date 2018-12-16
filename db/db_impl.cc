@@ -1065,6 +1065,17 @@ Status DBImpl::Get(const ReadOptions& read_options,
   return GetImpl(read_options, column_family, key, value);
 }
 
+Status DBImpl::GetDirty(ColumnFamilyHandle *column_family, const Slice &key, std::string *value,
+                          DirtyReadBufferContext *context) {
+  uint32_t id = 0;
+  if (column_family != nullptr) {
+    id = column_family->GetID();
+  }
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(id);
+  auto* dirty_buffer = cfd->dirty_buffer();
+  return dirty_buffer->GetDirty(key, value, context);
+}
+
 Status DBImpl::GetImpl(const ReadOptions& read_options,
                        ColumnFamilyHandle* column_family, const Slice& key,
                        PinnableSlice* pinnable_val, bool* value_found,

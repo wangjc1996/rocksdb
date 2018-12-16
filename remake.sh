@@ -1,5 +1,5 @@
 #! /bin/bash
 make uninstall
 make clean
-make -j install-shared
+make -j8 install-shared
 make shared_lib

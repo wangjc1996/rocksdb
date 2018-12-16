@@ -25,6 +25,7 @@ LIB_SOURCES =                                                   \
   db/db_info_dumper.cc                                          \
   db/db_iter.cc                                                 \
   db/dbformat.cc                                                \
+  db/dirty_buffer.cc                                                \
   db/error_handler.cc						\
   db/event_helpers.cc                                           \
   db/experimental.cc                                            \

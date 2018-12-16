@@ -1498,4 +1498,28 @@ Status DB::Merge(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   }
   return Write(opt, &batch);
 }
+
+Status DBImpl::WriteDirty(ColumnFamilyHandle* column_family, const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id) {
+  uint32_t id = 0;
+  if (column_family != nullptr) {
+    id = column_family->GetID();
+  }
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(id);
+  auto* dirty_buffer = cfd->dirty_buffer();
+  return dirty_buffer->Put(key, value, seq, txn_id);
+}
+
+Status DBImpl::WriteDirty(ColumnFamilyHandle* column_family, const SliceParts& key, const SliceParts& value, SequenceNumber seq, TransactionID txn_id) {
+  std::string key_buf, value_buf;
+  Slice key_slice(key, &key_buf);
+  Slice value_slice(value, &value_buf);
+  return WriteDirty(column_family, key_slice, value_slice, seq, txn_id);
+}
+
+Status DBImpl::RemoveDirty(uint32_t column_family_id, const std::unordered_set<string>* keys, TransactionID txn_id) {
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(column_family_id);
+  auto* dirty_buffer = cfd->dirty_buffer();
+  return dirty_buffer->Remove(keys, txn_id);
+}
+
 }  // namespace rocksdb
