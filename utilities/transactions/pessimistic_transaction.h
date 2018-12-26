@@ -141,6 +141,8 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   Status DoLockAll();
 
+  Status ReleaseDirty();
+
   void Clear() override;
 
   PessimisticTransactionDB* txn_db_impl_;

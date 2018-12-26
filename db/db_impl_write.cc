@@ -1516,10 +1516,10 @@ Status DBImpl::WriteDirty(ColumnFamilyHandle* column_family, const SliceParts& k
   return WriteDirty(column_family, key_slice, value_slice, seq, txn_id);
 }
 
-Status DBImpl::RemoveDirty(uint32_t column_family_id, const std::unordered_set<string>* keys, TransactionID txn_id) {
+Status DBImpl::RemoveDirty(uint32_t column_family_id, const Slice& key, TransactionID txn_id) {
   auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(column_family_id);
   auto* dirty_buffer = cfd->dirty_buffer();
-  return dirty_buffer->Remove(keys, txn_id);
+  return dirty_buffer->Remove(key, txn_id);
 }
 
 }  // namespace rocksdb

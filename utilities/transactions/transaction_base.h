@@ -22,8 +22,11 @@
 #include "utilities/transactions/transaction_util.h"
 #include "utilities/transactions/transaction_state_mgr.h"
 #include "db/column_family.h"
+#include "db/dirty_buffer.h"
 
 namespace rocksdb {
+
+struct DirtyReadBufferContext;
 
 class TransactionBaseImpl : public Transaction {
  public:

@@ -798,7 +798,7 @@ class DBImpl : public DB {
 
   Status GetDirty(ColumnFamilyHandle* column_family, const Slice& key, std::string* value, DirtyReadBufferContext* context);
 
-  Status RemoveDirty(uint32_t column_family_id, const std::unordered_set<string>* keys, TransactionID txn_id);
+  Status RemoveDirty(uint32_t column_family_id, const Slice& key, TransactionID txn_id);
 
  private:
   friend class DB;

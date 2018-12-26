@@ -326,6 +326,52 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 
   Status s;
 
+  DirtyReadBufferContext context;
+  bool is_dirty_read = true;
+  bool found_dirty = false;
+  context.is_dirty_read = &is_dirty_read;
+  context.found_dirty = &found_dirty;
+  context.seq = 0;
+  context.txn_id = 0;
+
+  if (is_dirty_read) {
+    std::string *buffer_value = pinnable_val.GetSelf();
+
+    // First find in local batch
+    s = write_batch_.GetFromBatch(column_family, dbimpl_->initial_db_options_, key, buffer_value);
+    if (s.ok()) {
+      return s;
+    }
+
+    // Second find in dirty buffer
+    s = dbimpl_->GetDirty(column_family, key, buffer_value, &context);
+    if (s.ok() && is_dirty_read && found_dirty) {
+      pinnable_val.PinSelf();
+
+      // Track dirty read info
+//      uint32_t cfh_id = GetColumnFamilyID(column_family);
+//
+//      SetSnapshotIfNeeded();
+//
+//      SequenceNumber seq;
+//      if (snapshot_) {
+//        seq = snapshot_->GetSequenceNumber();
+//      } else {
+//        seq = db_->GetLatestSequenceNumber();
+//      }
+//
+//      std::string key_str = key.ToString();
+//
+//      assert(context.txn_id != 0);
+
+      // TODO - Track Info
+//      TrackDirtyKey(cfh_id, key_str, seq, context.txn_id, true, false);
+
+      printf("%ld Found %s in %ld \n", GetID(), key.ToString().c_str(), context.txn_id);
+      return s;
+    }
+  }
+
   if (optimistic) {
     s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */);
   } else {
@@ -357,6 +403,15 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
     if (s.ok()) {
       num_puts_++;
     }
+    SequenceNumber seq;
+    if (snapshot_) {
+      seq = snapshot_->GetSequenceNumber();
+    } else {
+      seq = db_->GetLatestSequenceNumber();
+    }
+
+    s = dbimpl_->WriteDirty(column_family, key, value, seq, GetID());
+    printf("Txn %ld put %s \n", GetID(), key.ToString().c_str());
   }
 
   return s;

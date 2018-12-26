@@ -16,6 +16,7 @@
 
 #include "db/dbformat.h"
 #include "port/port_posix.h"
+#include "util/murmurhash.h"
 
 namespace rocksdb {
 
@@ -45,13 +46,17 @@ class DirtyBuffer {
 
   Status GetDirty(const Slice& key, std::string* value, DirtyReadBufferContext* context);
 
-  Status Remove(const std::unordered_set<string>* keys, TransactionID txn_id);
+  Status Remove(const Slice& key, TransactionID txn_id);
 
-  mutable port::RWMutex map_mutex_;
+  // TODO - delete
+//  mutable port::RWMutex map_mutex_;
 
  private:
   uint32_t column_family_id_;
+  std::vector<port::RWMutex> locks_;
   std::unordered_map<string, DirtyVersion*> map;
+
+  port::RWMutex* GetLock(const Slice &key);
 
   // No copying allowed
   DirtyBuffer(const DirtyBuffer&);

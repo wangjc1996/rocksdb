@@ -99,6 +99,7 @@ PessimisticTransaction::~PessimisticTransaction() {
 
 void PessimisticTransaction::Clear() {
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
+  ReleaseDirty();
   TransactionBaseImpl::Clear();
 }
 
@@ -159,7 +160,7 @@ Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& k
       // lock, which would be an unusual sequence.
       tracked_at_seq = db_->GetLatestSequenceNumber();
     }
-  } 
+  }
 
   if (s.ok()) { // fail_fast indicates it's via real tpl
     // We must track all the locked keys so that we can unlock them later. If
@@ -686,13 +687,33 @@ Status PessimisticTransaction::DoLockAll() {
     Status s;
     const auto& keys = key_map_iter.second;
     for (auto& key_iter : keys) {
-	const auto& key = key_iter.first;
-	const uint8_t key_state = key_iter.second.key_state;
-	if (((key_state & 2) != 0) && ((key_state & 4) == 0))
-            s = DoPessimisticLock(cf, key, false, true, false);
-	if (!s.ok()) return s;
+      const auto& key = key_iter.first;
+      const uint8_t key_state = key_iter.second.key_state;
+      if (((key_state & 2) != 0) && ((key_state & 4) == 0))
+                s = DoPessimisticLock(cf, key, false, true, false);
+      if (!s.ok()) return s;
     }
     // cfs.push_back(cf);
+  }
+  return Status::OK();
+}
+
+Status PessimisticTransaction::ReleaseDirty() {
+  // get write set
+  const TransactionKeyMap& key_map = GetTrackedKeys();
+
+  for (auto& key_map_iter : key_map) {
+    uint32_t cf = key_map_iter.first;
+
+    Status s;
+    const auto& keys = key_map_iter.second;
+    for (auto& key_iter : keys) {
+      const auto& key = key_iter.first;
+      const bool is_write = key_iter.second.exclusive;
+      if (is_write)
+        s = dbimpl_->RemoveDirty(cf, key, GetID());
+      if (!s.ok()) return s;
+    }
   }
   return Status::OK();
 }
