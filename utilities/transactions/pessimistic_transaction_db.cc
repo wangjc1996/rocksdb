@@ -583,6 +583,16 @@ Transaction* PessimisticTransactionDB::GetTransactionByName(
   }
 }
 
+Transaction* PessimisticTransactionDB::GetTransactionByID(const TransactionID id) {
+  std::lock_guard<std::mutex> lock(id_map_mutex_);
+  auto it = id_transactions_.find(id);
+  if (it == id_transactions_.end()) {
+    return nullptr;
+  } else {
+    return it->second;
+  }
+}
+
 void PessimisticTransactionDB::GetAllPreparedTransactions(
     std::vector<Transaction*>* transv) {
   assert(transv);
@@ -628,5 +638,18 @@ void PessimisticTransactionDB::UnregisterTransaction(Transaction* txn) {
 StateInfoInternal* PessimisticTransactionDB::DoGetState(uint32_t column_family_id, const std::string& key) {
   return state_mgr_.GetState(column_family_id, key);
 }
+
+void PessimisticTransactionDB::InsertTransaction(TransactionID tx_id, Transaction* txn) {
+  std::lock_guard<std::mutex> lock(id_map_mutex_);
+  id_transactions_[tx_id] = txn;
+}
+
+void PessimisticTransactionDB::RemoveTransaction(TransactionID tx_id) {
+  std::lock_guard<std::mutex> lock(id_map_mutex_);
+  auto it = id_transactions_.find(tx_id);
+  assert(it != id_transactions_.end());
+  id_transactions_.erase(it);
+}
+
 }  //  namespace rocksdb
 #endif  // ROCKSDB_LITE

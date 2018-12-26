@@ -29,7 +29,6 @@ using TransactionID = uint64_t;
 using std::string;
 
 struct DirtyReadBufferContext {
-  bool *is_dirty_read;
   bool *found_dirty;
   SequenceNumber seq;
   TransactionID txn_id;

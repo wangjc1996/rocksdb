@@ -92,7 +92,7 @@ namespace rocksdb {
     } else {
       assert(false);
     }
-    printf("Size of map %ld \n", map.size());
+//    printf("Size of map %ld \n", map.size());
     return Status::OK();
   }
 

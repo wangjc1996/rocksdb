@@ -85,6 +85,8 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
   }
   use_only_the_last_commit_time_batch_for_recovery_ =
       txn_options.use_only_the_last_commit_time_batch_for_recovery;
+
+  txn_db_impl_->InsertTransaction(GetID(), this);
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
@@ -392,11 +394,13 @@ Status PessimisticTransaction::Commit() {
 }
 
 Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
-  Status s = DoLockAll();
+  Status s = WaitForDependency();
 
-  if (!s.ok()) {
-    return s;
-  }
+  if (!s.ok()) return s;
+
+  s = DoLockAll();
+
+  if (!s.ok()) return s;
 
   PessimisticTransactionCallback callback(this);
   // Status s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
@@ -447,9 +451,14 @@ Status PessimisticTransaction::Rollback() {
       txn_state_.store(ROLLEDBACK);
     }
   } else if (txn_state_ == STARTED) {
+
+    // Not sure why there was not state changing here before
+
     if (log_number_ > 0) {
       assert(txn_db_impl_->GetTxnDBOptions().write_policy == WRITE_UNPREPARED);
       assert(GetId() > 0);
+
+      txn_state_.store(AWAITING_ROLLBACK);
       s = RollbackInternal();
 
       if (s.ok()) {
@@ -459,6 +468,7 @@ Status PessimisticTransaction::Rollback() {
     }
     // prepare couldn't have taken place
     Clear();
+    txn_state_.store(ROLLEDBACK);
   } else if (txn_state_ == COMMITED) {
     s = Status::InvalidArgument("This transaction has already been committed.");
   } else {
@@ -696,6 +706,48 @@ Status PessimisticTransaction::DoLockAll() {
     // cfs.push_back(cf);
   }
   return Status::OK();
+}
+
+Status PessimisticTransaction::WaitForDependency() {
+//  printf("Txn %ld waiting for ", GetID());
+  std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
+
+  Status result;
+
+  Env* env = txn_db_impl_->GetEnv();
+
+  for (auto id : depend_txn_ids_) {
+
+    Transaction *depend_txn = txn_db_impl_->GetTransactionByID(id);
+//    printf("%ld - ", id);
+
+    uint64_t start = env->NowMicros();
+    uint64_t now;
+    do {
+      now = env->NowMicros();
+      result = CheckTransactionState(depend_txn->GetState(), now - start);
+      if (result.ok()) break;
+      else if (result.IsTimedOut()) return result;
+      else if (result.IsAborted()) return result;
+
+      __asm volatile("pause" : :);
+
+    } while (true);
+  }
+
+//  printf("\n");
+  return result;
+}
+
+Status PessimisticTransaction::CheckTransactionState(TransactionState state, int64_t used_period) {
+  if (state == COMMITED) {
+    return Status::OK();
+  } else if (state == AWAITING_ROLLBACK || state == ROLLEDBACK) {
+    return Status::Aborted();
+  } else if (used_period > GetLockTimeout()) {
+    return Status::TimedOut();
+  }
+  return Status::Incomplete();
 }
 
 Status PessimisticTransaction::ReleaseDirty() {

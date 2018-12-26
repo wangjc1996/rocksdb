@@ -315,7 +315,7 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
 }
 
 Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyHandle* column_family,
-		const Slice& key, std::string* value, bool optimistic) {
+		const Slice& key, std::string* value, bool optimistic, bool is_dirty_read) {
   assert(value != nullptr);
   PinnableSlice pinnable_val(value);
   assert(!pinnable_val.IsPinned());
@@ -326,15 +326,14 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 
   Status s;
 
-  DirtyReadBufferContext context;
-  bool is_dirty_read = true;
-  bool found_dirty = false;
-  context.is_dirty_read = &is_dirty_read;
-  context.found_dirty = &found_dirty;
-  context.seq = 0;
-  context.txn_id = 0;
-
   if (is_dirty_read) {
+
+    DirtyReadBufferContext context{};
+    bool found_dirty = false;
+    context.found_dirty = &found_dirty;
+    context.seq = 0;
+    context.txn_id = 0;
+
     std::string *buffer_value = pinnable_val.GetSelf();
 
     // First find in local batch
@@ -345,29 +344,13 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 
     // Second find in dirty buffer
     s = dbimpl_->GetDirty(column_family, key, buffer_value, &context);
-    if (s.ok() && is_dirty_read && found_dirty) {
+    if (s.ok() && found_dirty) {
       pinnable_val.PinSelf();
 
-      // Track dirty read info
-//      uint32_t cfh_id = GetColumnFamilyID(column_family);
-//
-//      SetSnapshotIfNeeded();
-//
-//      SequenceNumber seq;
-//      if (snapshot_) {
-//        seq = snapshot_->GetSequenceNumber();
-//      } else {
-//        seq = db_->GetLatestSequenceNumber();
-//      }
-//
-//      std::string key_str = key.ToString();
-//
-//      assert(context.txn_id != 0);
+      // record transaction dependency
+      depend_txn_ids_.emplace_back(context.txn_id);
 
-      // TODO - Track Info
-//      TrackDirtyKey(cfh_id, key_str, seq, context.txn_id, true, false);
-
-      printf("%ld Found %s in %ld \n", GetID(), key.ToString().c_str(), context.txn_id);
+//      printf("%ld Found %s in %ld \n", GetID(), key.ToString().c_str(), context.txn_id);
       return s;
     }
   }
@@ -411,7 +394,7 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
     }
 
     s = dbimpl_->WriteDirty(column_family, key, value, seq, GetID());
-    printf("Txn %ld put %s \n", GetID(), key.ToString().c_str());
+//    printf("Txn %ld put %s \n", GetID(), key.ToString().c_str());
   }
 
   return s;

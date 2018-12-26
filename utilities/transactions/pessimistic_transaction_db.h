@@ -84,6 +84,9 @@ class PessimisticTransactionDB : public TransactionDB {
 
   Status CheckLock(PessimisticTransaction* txn, uint32_t cfh_id, const std::string& key, bool exclusive);
 
+  void InsertTransaction(TransactionID tx_id, Transaction* tx);
+  void RemoveTransaction(TransactionID tx_id);
+
   void UnLock(PessimisticTransaction* txn, const TransactionKeyMap* keys);
   void UnLock(PessimisticTransaction* txn, uint32_t cfh_id,
               const std::string& key);
@@ -108,6 +111,8 @@ class PessimisticTransactionDB : public TransactionDB {
   bool TryStealingExpiredTransactionLocks(TransactionID tx_id);
 
   Transaction* GetTransactionByName(const TransactionName& name) override;
+
+  Transaction* GetTransactionByID(const TransactionID id);
 
   void RegisterTransaction(Transaction* txn);
   void UnregisterTransaction(Transaction* txn);
@@ -169,6 +174,10 @@ class PessimisticTransactionDB : public TransactionDB {
   // map from name to two phase transaction instance
   std::mutex name_map_mutex_;
   std::unordered_map<TransactionName, Transaction*> transactions_;
+
+  // map from name to two phase transaction instance
+  std::mutex id_map_mutex_;
+  std::unordered_map<TransactionID, Transaction*> id_transactions_;
 
   // Signal that we are testing a crash scenario. Some asserts could be relaxed
   // in such cases.

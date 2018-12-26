@@ -248,7 +248,7 @@ class TransactionBaseImpl : public Transaction {
 
   virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false) override;
 
-  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false) override;
+  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, bool is_dirty_read = false) override;
 
   protected:
   void DoTrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive, bool optimistic = false);
@@ -300,6 +300,9 @@ class TransactionBaseImpl : public Transaction {
   uint64_t num_puts_ = 0;
   uint64_t num_deletes_ = 0;
   uint64_t num_merges_ = 0;
+
+  // dirty read dependencies
+  autovector<TransactionID> depend_txn_ids_;
 
   struct SavePoint {
     std::shared_ptr<const Snapshot> snapshot_;

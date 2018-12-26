@@ -141,6 +141,10 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   Status DoLockAll();
 
+  Status WaitForDependency();
+
+  Status CheckTransactionState(TransactionState state, int64_t used_period);
+
   Status ReleaseDirty();
 
   void Clear() override;
