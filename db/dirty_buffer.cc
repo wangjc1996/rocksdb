@@ -13,8 +13,7 @@ namespace rocksdb {
 
 
   DirtyBuffer::DirtyBuffer(uint32_t column_family_id)
-      : column_family_id_(column_family_id),
-        locks_(40000) {
+      : column_family_id_(column_family_id) {
 
   }
 
@@ -23,7 +22,7 @@ namespace rocksdb {
   }
 
   Status DirtyBuffer::Put(const Slice &key, const Slice &value, SequenceNumber seq, TransactionID txn_id) {
-    WriteLock wl(GetLock(key.ToString()));
+    WriteLock wl(&map_mutex_);
     auto *current = new DirtyVersion(key, value, seq, txn_id);
     auto *header = map[key.ToString()];
     if (header == nullptr) {
@@ -37,7 +36,7 @@ namespace rocksdb {
   }
 
   Status DirtyBuffer::GetDirty(const Slice &key, std::string *value, DirtyReadBufferContext *context) {
-    ReadLock rl(GetLock(key.ToString()));
+    ReadLock rl(&map_mutex_);
     auto it = map.find(key.ToString());
     if (it != map.end()) {
       *(context->found_dirty) = true;
@@ -52,7 +51,7 @@ namespace rocksdb {
   }
 
   Status DirtyBuffer::Remove(const Slice &key, TransactionID txn_id) {
-    WriteLock wl(GetLock(key.ToString()));
+    WriteLock wl(&map_mutex_);
     auto it = map.find(key.ToString());
     if (it != map.end()) {
       DirtyVersion *dirty = it->second;
@@ -103,11 +102,6 @@ namespace rocksdb {
 
   DirtyVersion::~DirtyVersion() {
 
-  }
-
-  port::RWMutex *DirtyBuffer::GetLock(const Slice &key) {
-    static murmur_hash hash;
-    return &locks_[hash(key) % locks_.size()];
   }
 
 }  // namespace rocksdb

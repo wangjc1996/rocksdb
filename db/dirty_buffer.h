@@ -47,15 +47,11 @@ class DirtyBuffer {
 
   Status Remove(const Slice& key, TransactionID txn_id);
 
-  // TODO - delete
-//  mutable port::RWMutex map_mutex_;
+  mutable port::RWMutex map_mutex_;
 
  private:
   uint32_t column_family_id_;
-  std::vector<port::RWMutex> locks_;
   std::unordered_map<string, DirtyVersion*> map;
-
-  port::RWMutex* GetLock(const Slice &key);
 
   // No copying allowed
   DirtyBuffer(const DirtyBuffer&);
