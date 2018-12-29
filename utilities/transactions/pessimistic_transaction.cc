@@ -354,10 +354,11 @@ Status PessimisticTransaction::Commit() {
       if (!name_.empty()) {
         txn_db_impl_->UnregisterTransaction(this);
       }
-      Clear();
       if (s.ok()) {
         txn_state_.store(COMMITED);
+        sequence_number_ = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
       }
+      Clear();
     }
   } else if (commit_prepared) {
     txn_state_.store(AWAITING_COMMIT);
@@ -378,8 +379,9 @@ Status PessimisticTransaction::Commit() {
         log_number_);
     txn_db_impl_->UnregisterTransaction(this);
 
-    Clear();
     txn_state_.store(COMMITED);
+    sequence_number_ = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
+    Clear();
   } else if (txn_state_ == LOCKS_STOLEN) {
     s = Status::Expired();
   } else if (txn_state_ == COMMITED) {

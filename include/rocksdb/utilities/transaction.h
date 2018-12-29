@@ -457,6 +457,8 @@ class Transaction {
     LOCKS_STOLEN = 7,
   };
 
+  SequenceNumber GetCommitSequence() const { return sequence_number_; }
+
   TransactionState GetState() const { return txn_state_; }
   void SetState(TransactionState state) { txn_state_ = state; }
 
@@ -500,6 +502,9 @@ class Transaction {
 
   // Execution status of the transaction.
   std::atomic<TransactionState> txn_state_;
+
+  // if this txn commits successfully, this stores the commit seq number
+  SequenceNumber sequence_number_;
 
   uint64_t id_ = 0;
   virtual void SetId(uint64_t id) {
