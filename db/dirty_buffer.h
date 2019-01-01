@@ -29,15 +29,15 @@ using TransactionID = uint64_t;
 using std::string;
 
 struct DirtyReadBufferContext {
-  bool *found_dirty;
-  SequenceNumber seq;
-  TransactionID txn_id;
+  bool *found_dirty = nullptr;
+  SequenceNumber seq = 0;
+  TransactionID txn_id = 0;
 };
 
 class DirtyBuffer {
  public:
 
-  explicit DirtyBuffer(uint32_t column_family_id);
+  explicit DirtyBuffer(uint32_t column_family_id, int size);
 
   ~DirtyBuffer();
 
@@ -47,11 +47,15 @@ class DirtyBuffer {
 
   Status Remove(const Slice& key, TransactionID txn_id);
 
-  mutable port::RWMutex map_mutex_;
-
  private:
   uint32_t column_family_id_;
-  std::unordered_map<string, DirtyVersion*> map;
+  std::vector<port::RWMutex> locks_;
+  int size_;
+
+  DirtyVersion **dirty_array_;
+
+  int GetPosition(const Slice &key);
+  port::RWMutex* GetLock(const int pos);
 
   // No copying allowed
   DirtyBuffer(const DirtyBuffer&);
@@ -64,6 +68,8 @@ class DirtyVersion {
   explicit DirtyVersion(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id);
 
   ~DirtyVersion();
+
+  inline Slice GetKey() { return key_; };
 
   inline Slice GetValue() { return value_; };
 

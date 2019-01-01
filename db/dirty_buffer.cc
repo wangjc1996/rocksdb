@@ -12,9 +12,11 @@
 namespace rocksdb {
 
 
-  DirtyBuffer::DirtyBuffer(uint32_t column_family_id)
-      : column_family_id_(column_family_id) {
-
+  DirtyBuffer::DirtyBuffer(uint32_t column_family_id, int size)
+      : column_family_id_(column_family_id),
+        locks_(size),
+        size_(size) {
+    dirty_array_ = new DirtyVersion *[size]();
   }
 
   DirtyBuffer::~DirtyBuffer() {
@@ -22,25 +24,33 @@ namespace rocksdb {
   }
 
   Status DirtyBuffer::Put(const Slice &key, const Slice &value, SequenceNumber seq, TransactionID txn_id) {
-    WriteLock wl(&map_mutex_);
+    int position = GetPosition(key);
+    WriteLock wl(GetLock(position));
+
     auto *current = new DirtyVersion(key, value, seq, txn_id);
-    auto *header = map[key.ToString()];
+    auto *header = dirty_array_[position];
     if (header == nullptr) {
-      map[key.ToString()] = current;
+//      printf("%ld put %s at pos %d ... header is null \n", txn_id, key.ToString().c_str(), position);
+      dirty_array_[position] = current;
     } else {
+//      printf("%ld put %s at pos %d ... header is not null \n", txn_id, key.ToString().c_str(), position);
       current->link_older = header;
       header->link_newer = current;
-      map[key.ToString()] = current;
+      dirty_array_[position] = current;
     }
     return Status::OK();
   }
 
   Status DirtyBuffer::GetDirty(const Slice &key, std::string *value, DirtyReadBufferContext *context) {
-    ReadLock rl(&map_mutex_);
-    auto it = map.find(key.ToString());
-    if (it != map.end()) {
+    int position = GetPosition(key);
+    ReadLock rl(GetLock(position));
+    auto *dirty = dirty_array_[position];
+    while (dirty != nullptr) {
+      if (key.compare(dirty->GetKey()) != 0) {
+        dirty = dirty->link_older;
+        continue;
+      }
       *(context->found_dirty) = true;
-      DirtyVersion *dirty = it->second;
       Slice stored_value = dirty->GetValue();
       value->assign(stored_value.data(), stored_value.size());
       context->seq = dirty->GetSeq();
@@ -51,48 +61,52 @@ namespace rocksdb {
   }
 
   Status DirtyBuffer::Remove(const Slice &key, TransactionID txn_id) {
-    WriteLock wl(&map_mutex_);
-    auto it = map.find(key.ToString());
-    if (it != map.end()) {
-      DirtyVersion *dirty = it->second;
-      while (dirty != nullptr) {
-        TransactionID stored_txn_id = dirty->GetTxnId();
-        if (stored_txn_id != txn_id) {
-          dirty = dirty->link_older;
-          continue;
-        }
-        if (dirty->link_newer == nullptr) {
-          //head of the linked list
-          auto *new_header = dirty->link_older;
-          if (new_header == nullptr) {
-            map.erase(it);
-            delete dirty;
-            break;
-          } else {
-            map[key.ToString()] = new_header;
-            new_header->link_newer = nullptr;
-          }
-        } else if (dirty->link_older == nullptr) {
-          //end of the linked list, not single item in the linked list
-          auto *former = dirty->link_newer;
-          former->link_older = nullptr;
-          dirty->link_newer = nullptr;
-        } else {
-          //middle of the linked list
-          auto *former = dirty->link_newer;
-          auto *latter = dirty->link_older;
-          former->link_older = latter;
-          latter->link_newer = former;
-        }
-        DirtyVersion *temp = dirty->link_older;
-        delete dirty;
-        dirty = temp;
+    int position = GetPosition(key);
+    WriteLock wl(GetLock(position));
+    auto *dirty = dirty_array_[position];
+    while (dirty != nullptr) {
+      TransactionID stored_txn_id = dirty->GetTxnId();
+      if (stored_txn_id != txn_id && key.compare(dirty->GetKey()) != 0) {
+        dirty = dirty->link_older;
+        continue;
       }
-    } else {
-      assert(false);
+      if (dirty->link_newer == nullptr) {
+        //head of the linked list
+        auto *new_header = dirty->link_older;
+        if (new_header == nullptr) {
+          dirty_array_[position] = nullptr;
+          delete dirty;
+          break;
+        } else {
+          dirty_array_[position] = new_header;
+          new_header->link_newer = nullptr;
+        }
+      } else if (dirty->link_older == nullptr) {
+        //end of the linked list, not single item in the linked list
+        auto *former = dirty->link_newer;
+        former->link_older = nullptr;
+        dirty->link_newer = nullptr;
+      } else {
+        //middle of the linked list
+        auto *former = dirty->link_newer;
+        auto *latter = dirty->link_older;
+        former->link_older = latter;
+        latter->link_newer = former;
+      }
+      DirtyVersion *temp = dirty->link_older;
+      delete dirty;
+      dirty = temp;
     }
-//    printf("Size of map %ld \n", map.size());
     return Status::OK();
+  }
+
+  int DirtyBuffer::GetPosition(const Slice &key) {
+    static murmur_hash hash;
+    return static_cast<int>(hash(key) % size_);
+  }
+
+  port::RWMutex *DirtyBuffer::GetLock(const int pos) {
+    return &locks_[pos];
   }
 
   DirtyVersion::DirtyVersion(const Slice &key, const Slice &value, SequenceNumber seq, TransactionID txn_id)

@@ -192,7 +192,19 @@ Status TransactionUtil::CheckKeysForConflicts(PessimisticTransaction* txn,
       const SequenceNumber key_seq = key_iter.second.seq;
 
       if ((key_state & 1) != 0) {
-        result = CheckKey(db_impl, sv, earliest_seq, key_seq, key, cache_only);
+
+        if (key_iter.second.is_dirty_read) {
+          if (key_iter.second.dependent_txn == 0) {
+            result = Status::Busy();
+            break;
+          } else {
+            Transaction *depend_txn = txn_db_impl->GetTransactionByID(key_iter.second.dependent_txn);
+            result = CheckKey(db_impl, sv, earliest_seq, depend_txn->GetCommitSequence(), key, cache_only);
+          }
+        } else {
+          result = CheckKey(db_impl, sv, earliest_seq, key_seq, key, cache_only);
+        }
+
         if (!result.ok()) {
           break;
         }

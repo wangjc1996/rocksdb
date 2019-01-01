@@ -19,6 +19,8 @@
 
 namespace rocksdb {
 
+using TransactionID = uint64_t;
+
 struct TransactionKeyMapInfo {
   // Earliest sequence number that is relevant to this transaction for this key
   SequenceNumber seq;
@@ -29,8 +31,11 @@ struct TransactionKeyMapInfo {
   bool exclusive;
   uint8_t key_state; // in locked set | in write set (to be locked) | in read set
 
+  bool is_dirty_read;
+  TransactionID dependent_txn;
+
   explicit TransactionKeyMapInfo(SequenceNumber seq_no)
-      : seq(seq_no), num_writes(0), num_reads(0), exclusive(false), key_state(0) {}
+      : seq(seq_no), num_writes(0), num_reads(0), exclusive(false), key_state(0), is_dirty_read(false), dependent_txn(0) {}
 };
 
 using TransactionKeyMap =

@@ -290,7 +290,7 @@ Iterator* TransactionBaseImpl::GetIterator(const ReadOptions& read_options,
   return write_batch_.NewIteratorWithBase(column_family, db_iter);
 }
 
-Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked) {
+Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, TransactionID dependent_id, bool untracked) {
   if (untracked) {
     return Status::OK();
   }
@@ -308,7 +308,7 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
 
   std::string key_str = key.ToString();
 
-  DoTrackKey(cfh_id, key_str, seq, read_only, exclusive, true /* optimistic */);
+  DoTrackKey(cfh_id, key_str, seq, read_only, exclusive, true /* optimistic */, dependent_id);
 
   // Always return OK. Confilct checking will happen at commit time.
   return Status::OK();
@@ -350,7 +350,8 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
       // record transaction dependency
       depend_txn_ids_.emplace_back(context.txn_id);
 
-//      printf("%ld Found %s in %ld \n", GetID(), key.ToString().c_str(), context.txn_id);
+      printf("TXN %ld KEY %s DEP %ld \n", GetID(), key.ToString().c_str(), context.txn_id);
+      s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */,context.txn_id);
       return s;
     }
   }
@@ -649,7 +650,7 @@ uint64_t TransactionBaseImpl::GetNumKeys() const {
 
 void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
                                    SequenceNumber seq, bool read_only,
-                                   bool exclusive, bool optimistic) {
+                                   bool exclusive, bool optimistic, TransactionID dependent_id) {
   auto& cf_key_map = tracked_keys_[cfh_id];
   auto iter = cf_key_map.find(key);
   if (iter == cf_key_map.end()) {
@@ -674,6 +675,17 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
     else iter->second.key_state |= 4; 		 // 2pl write
   }
   iter->second.exclusive |= exclusive;
+
+  if (dependent_id != 0) {
+    assert(read_only);
+    iter->second.is_dirty_read = true;
+    if (iter->second.dependent_txn != 0 && iter->second.dependent_txn != dependent_id) {
+      // Already dirty read a version written by another txn, assign 0 to it, and abort when validation
+      iter->second.dependent_txn = 0;
+    } else {
+      iter->second.dependent_txn = dependent_id;
+    }
+  }
 }
 
 void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,

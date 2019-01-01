@@ -251,9 +251,9 @@ class TransactionBaseImpl : public Transaction {
   virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, bool is_dirty_read = false) override;
 
   protected:
-  void DoTrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive, bool optimistic = false);
+  void DoTrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive, bool optimistic = false, TransactionID dependent_id = 0);
 
-  Status DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked = false);
+  Status DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, TransactionID dependent_id = 0, bool untracked = false);
 
   Status DoPessimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false) {
   return DoPessimisticLock(GetColumnFamilyID(column_family), key, read_only, exclusive, fail_fast, untracked); 
