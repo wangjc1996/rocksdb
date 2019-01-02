@@ -350,7 +350,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
       // record transaction dependency
       depend_txn_ids_.emplace_back(context.txn_id);
 
-      printf("TXN %ld KEY %s DEP %ld \n", GetID(), key.ToString().c_str(), context.txn_id);
+//      printf("TXN %ld KEY %s DEP %ld \n", GetID(), key.ToString().c_str(), context.txn_id);
       s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */,context.txn_id);
       return s;
     }
