@@ -711,7 +711,6 @@ Status PessimisticTransaction::DoLockAll() {
 }
 
 Status PessimisticTransaction::WaitForDependency() {
-//  printf("Txn %ld waiting for ", GetID());
   std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
 
   Status result;
@@ -721,7 +720,6 @@ Status PessimisticTransaction::WaitForDependency() {
   for (auto id : depend_txn_ids_) {
 
     Transaction *depend_txn = txn_db_impl_->GetTransactionByID(id);
-//    printf("%ld - ", id);
 
     uint64_t start = env->NowMicros();
     uint64_t now;
@@ -737,7 +735,6 @@ Status PessimisticTransaction::WaitForDependency() {
     } while (true);
   }
 
-//  printf("\n");
   return result;
 }
 
@@ -746,7 +743,7 @@ Status PessimisticTransaction::CheckTransactionState(TransactionState state, int
     return Status::OK();
   } else if (state == AWAITING_ROLLBACK || state == ROLLEDBACK) {
     return Status::Aborted();
-  } else if (used_period > GetLockTimeout()) {
+  } else if (used_period > 100000) { // microseconds, 0.1 second
     return Status::TimedOut();
   }
   return Status::Incomplete();
