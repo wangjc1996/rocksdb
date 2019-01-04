@@ -31,6 +31,7 @@
 namespace rocksdb {
 
 class PessimisticTransactionDB;
+struct TxnMetaData;
 
 // A transaction under pessimistic concurrency control. This class implements
 // the locking API and interfaces with the lock manager as well as the
@@ -143,7 +144,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   Status WaitForDependency();
 
-  Status CheckTransactionState(TransactionState state, int64_t used_period);
+  Status CheckTransactionState(TxnMetaData* metadata, int64_t used_period);
 
   Status ReleaseDirty();
 
@@ -172,6 +173,8 @@ class PessimisticTransaction : public TransactionBaseImpl {
   //
   // empty if current transaction is not waiting.
   autovector<TransactionID> waiting_txn_ids_;
+
+  TxnMetaData* metaData;
 
   // The following two represents the (cf, key) that a transaction is waiting
   // on.

@@ -583,7 +583,7 @@ Transaction* PessimisticTransactionDB::GetTransactionByName(
   }
 }
 
-Transaction* PessimisticTransactionDB::GetTransactionByID(const TransactionID id) {
+TxnMetaData* PessimisticTransactionDB::GetTxnMetaData(const TransactionID id) {
   std::lock_guard<std::mutex> lock(id_map_mutex_);
   auto it = id_transactions_.find(id);
   if (it == id_transactions_.end()) {
@@ -639,9 +639,11 @@ StateInfoInternal* PessimisticTransactionDB::DoGetState(uint32_t column_family_i
   return state_mgr_.GetState(column_family_id, key);
 }
 
-void PessimisticTransactionDB::InsertTransaction(TransactionID tx_id, Transaction* txn) {
+TxnMetaData* PessimisticTransactionDB::InsertTransaction(TransactionID tx_id) {
   std::lock_guard<std::mutex> lock(id_map_mutex_);
-  id_transactions_[tx_id] = txn;
+  TxnMetaData* metaData = new TxnMetaData();
+  id_transactions_[tx_id] = metaData;
+  return metaData;
 }
 
 void PessimisticTransactionDB::RemoveTransaction(TransactionID tx_id) {

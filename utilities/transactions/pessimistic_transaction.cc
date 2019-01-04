@@ -86,7 +86,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
   use_only_the_last_commit_time_batch_for_recovery_ =
       txn_options.use_only_the_last_commit_time_batch_for_recovery;
 
-  txn_db_impl_->InsertTransaction(GetID(), this);
+  metaData = txn_db_impl_->InsertTransaction(GetID());
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
@@ -227,6 +227,7 @@ Status PessimisticTransaction::CommitBatch(WriteBatch* batch) {
     s = CommitBatchInternal(batch);
     if (s.ok()) {
       txn_state_.store(COMMITED);
+      metaData->state.store(S_COMMITED);
     }
   } else if (txn_state_ == LOCKS_STOLEN) {
     s = Status::Expired();
@@ -356,7 +357,10 @@ Status PessimisticTransaction::Commit() {
       }
       if (s.ok()) {
         txn_state_.store(COMMITED);
-        sequence_number_ = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
+        metaData->state.store(S_COMMITED);
+        metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
+      } else {
+        metaData->state.store(S_ABORT);
       }
       Clear();
     }
@@ -380,7 +384,8 @@ Status PessimisticTransaction::Commit() {
     txn_db_impl_->UnregisterTransaction(this);
 
     txn_state_.store(COMMITED);
-    sequence_number_ = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
+    metaData->state.store(S_COMMITED);
+    metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
     Clear();
   } else if (txn_state_ == LOCKS_STOLEN) {
     s = Status::Expired();
@@ -451,6 +456,7 @@ Status PessimisticTransaction::Rollback() {
           log_number_);
       Clear();
       txn_state_.store(ROLLEDBACK);
+      metaData->state.store(S_ABORT);
     }
   } else if (txn_state_ == STARTED) {
 
@@ -471,6 +477,7 @@ Status PessimisticTransaction::Rollback() {
     // prepare couldn't have taken place
     Clear();
     txn_state_.store(ROLLEDBACK);
+    metaData->state.store(S_ABORT);
   } else if (txn_state_ == COMMITED) {
     s = Status::InvalidArgument("This transaction has already been committed.");
   } else {
@@ -719,13 +726,13 @@ Status PessimisticTransaction::WaitForDependency() {
 
   for (auto id : depend_txn_ids_) {
 
-    Transaction *depend_txn = txn_db_impl_->GetTransactionByID(id);
+    TxnMetaData* dep_metadata = txn_db_impl_->GetTxnMetaData(id);
 
     uint64_t start = env->NowMicros();
     uint64_t now;
     do {
       now = env->NowMicros();
-      result = CheckTransactionState(depend_txn->GetState(), now - start);
+      result = CheckTransactionState(dep_metadata, now - start);
       if (result.ok()) break;
       else if (result.IsTimedOut()) return result;
       else if (result.IsAborted()) return result;
@@ -738,10 +745,11 @@ Status PessimisticTransaction::WaitForDependency() {
   return result;
 }
 
-Status PessimisticTransaction::CheckTransactionState(TransactionState state, int64_t used_period) {
-  if (state == COMMITED) {
+Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int64_t used_period) {
+  SimpleState  state = metadata->state;
+  if (state == S_COMMITED) {
     return Status::OK();
-  } else if (state == AWAITING_ROLLBACK || state == ROLLEDBACK) {
+  } else if (state == S_ABORT) {
     return Status::Aborted();
   } else if (used_period > 100000) { // microseconds, 0.1 second
     return Status::TimedOut();

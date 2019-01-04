@@ -198,8 +198,8 @@ Status TransactionUtil::CheckKeysForConflicts(PessimisticTransaction* txn,
             result = Status::Busy();
             break;
           } else {
-            Transaction *depend_txn = txn_db_impl->GetTransactionByID(key_iter.second.dependent_txn);
-            result = CheckKey(db_impl, sv, earliest_seq, depend_txn->GetCommitSequence(), key, cache_only);
+            TxnMetaData* metaData = txn_db_impl->GetTxnMetaData(key_iter.second.dependent_txn);
+            result = CheckKey(db_impl, sv, earliest_seq, metaData->commit_seq, key, cache_only);
           }
         } else {
           result = CheckKey(db_impl, sv, earliest_seq, key_seq, key, cache_only);

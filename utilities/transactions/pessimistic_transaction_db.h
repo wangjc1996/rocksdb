@@ -26,6 +26,22 @@
 
 namespace rocksdb {
 
+enum SimpleState {
+  S_STARTED = 0,
+  S_COMMITED = 1,
+  S_ABORT = 2,
+};
+
+struct TxnMetaData {
+  std::atomic<SimpleState> state;
+  SequenceNumber commit_seq;
+
+  TxnMetaData() {
+    state.store(S_STARTED);
+    commit_seq = 0;
+  }
+};
+
 class PessimisticTransactionDB : public TransactionDB {
  public:
   explicit PessimisticTransactionDB(DB* db,
@@ -84,7 +100,7 @@ class PessimisticTransactionDB : public TransactionDB {
 
   Status CheckLock(PessimisticTransaction* txn, uint32_t cfh_id, const std::string& key, bool exclusive);
 
-  void InsertTransaction(TransactionID tx_id, Transaction* tx);
+  TxnMetaData* InsertTransaction(TransactionID tx_id);
   void RemoveTransaction(TransactionID tx_id);
 
   void UnLock(PessimisticTransaction* txn, const TransactionKeyMap* keys);
@@ -112,7 +128,7 @@ class PessimisticTransactionDB : public TransactionDB {
 
   Transaction* GetTransactionByName(const TransactionName& name) override;
 
-  Transaction* GetTransactionByID(const TransactionID id);
+  TxnMetaData* GetTxnMetaData(const TransactionID id);
 
   void RegisterTransaction(Transaction* txn);
   void UnregisterTransaction(Transaction* txn);
@@ -177,7 +193,7 @@ class PessimisticTransactionDB : public TransactionDB {
 
   // map from name to two phase transaction instance
   std::mutex id_map_mutex_;
-  std::unordered_map<TransactionID, Transaction*> id_transactions_;
+  std::unordered_map<TransactionID, TxnMetaData*> id_transactions_;
 
   // Signal that we are testing a crash scenario. Some asserts could be relaxed
   // in such cases.
