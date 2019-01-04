@@ -35,10 +35,18 @@ enum SimpleState {
 struct TxnMetaData {
   std::atomic<SimpleState> state;
   SequenceNumber commit_seq;
+  Transaction* txn;
 
   TxnMetaData() {
     state.store(S_STARTED);
     commit_seq = 0;
+    txn = nullptr;
+  }
+
+  TxnMetaData(Transaction* transaction) {
+    state.store(S_STARTED);
+    commit_seq = 0;
+    txn = transaction;
   }
 };
 
@@ -100,7 +108,7 @@ class PessimisticTransactionDB : public TransactionDB {
 
   Status CheckLock(PessimisticTransaction* txn, uint32_t cfh_id, const std::string& key, bool exclusive);
 
-  TxnMetaData* InsertTransaction(TransactionID tx_id);
+  TxnMetaData* InsertTransaction(TransactionID tx_id, Transaction* transaction = nullptr);
   void RemoveTransaction(TransactionID tx_id);
 
   void UnLock(PessimisticTransaction* txn, const TransactionKeyMap* keys);

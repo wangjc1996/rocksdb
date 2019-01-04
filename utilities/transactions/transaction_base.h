@@ -281,6 +281,8 @@ class TransactionBaseImpl : public Transaction {
   // Sets a snapshot if SetSnapshotOnNextOperation() has been called.
   void SetSnapshotIfNeeded();
 
+  virtual Status DoWait(unsigned int txn_type, unsigned int piece_idx) { (void)txn_type; (void)piece_idx; return Status::OK(); };
+
   DB* db_;
   DBImpl* dbimpl_;
   bool track_state_;

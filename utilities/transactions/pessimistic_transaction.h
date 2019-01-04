@@ -206,6 +206,8 @@ class PessimisticTransaction : public TransactionBaseImpl {
   void UnlockGetForUpdate(ColumnFamilyHandle* column_family,
                           const Slice& key) override;
 
+  Status DoWait(unsigned int txn_type, unsigned int piece_idx) override;
+
   // Returns OK if it is safe to commit this transaction.  Returns Status::Busy
   // if there are read or write conflicts that would prevent us from committing
   // OR if we can not determine whether there would be any such conflicts.

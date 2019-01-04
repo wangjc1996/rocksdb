@@ -86,7 +86,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
   use_only_the_last_commit_time_batch_for_recovery_ =
       txn_options.use_only_the_last_commit_time_batch_for_recovery;
 
-  metaData = txn_db_impl_->InsertTransaction(GetID());
+  metaData = txn_db_impl_->InsertTransaction(GetID(), this);
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
@@ -717,11 +717,12 @@ Status PessimisticTransaction::DoLockAll() {
   return Status::OK();
 }
 
+#define cpu_relax() __asm__ __volatile__("pause\n": : :"memory")
+
 Status PessimisticTransaction::WaitForDependency() {
   std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
 
   Status result;
-
   Env* env = txn_db_impl_->GetEnv();
 
   for (auto id : depend_txn_ids_) {
@@ -737,7 +738,7 @@ Status PessimisticTransaction::WaitForDependency() {
       else if (result.IsTimedOut()) return result;
       else if (result.IsAborted()) return result;
 
-      __asm volatile("pause" : :);
+      cpu_relax();
 
     } while (true);
   }
@@ -745,8 +746,45 @@ Status PessimisticTransaction::WaitForDependency() {
   return result;
 }
 
+// TODO
+unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type) { (void)txn_type;(void)piece_idx;(void)dep_type; return 0; }
+
+Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_idx) {
+  std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
+
+  Status result;
+  Env* env = txn_db_impl_->GetEnv();
+
+  for (auto id : depend_txn_ids_) {
+
+    TxnMetaData* dep_metadata = txn_db_impl_->GetTxnMetaData(id);
+    Transaction* depend_txn = dep_metadata->txn;
+
+    uint64_t start = env->NowMicros();
+    uint64_t now;
+    do {
+      now = env->NowMicros();
+      result = CheckTransactionState(dep_metadata, now - start);
+      if (result.ok()) break;
+      else if (result.IsTimedOut()) return result;
+      else if (result.IsAborted()) return result;
+      else if (result.IsIncomplete() && depend_txn != nullptr) {
+        unsigned int dep_txn_type = depend_txn->GetTxnType();
+        unsigned int dep_piece_idx = GetConflictPiece(txn_type, piece_idx, dep_txn_type);
+        if (depend_txn->GetTxnPieceIdx() >= dep_piece_idx) break;
+      }
+
+      cpu_relax();
+
+    } while (true);
+  }
+  return result;
+}
+
+#undef cpu_relax
+
 Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int64_t used_period) {
-  SimpleState  state = metadata->state;
+  SimpleState state = metadata->state;
   if (state == S_COMMITED) {
     return Status::OK();
   } else if (state == S_ABORT) {
