@@ -746,8 +746,30 @@ Status PessimisticTransaction::WaitForDependency() {
   return result;
 }
 
-// TODO
-unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type) { (void)txn_type;(void)piece_idx;(void)dep_type; return 0; }
+unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type) {
+  if (txn_type == 0 && dep_type == 0) {
+    switch(piece_idx) {
+      case 1:// warehouse
+      case 3:// customer
+      case 6:// order_idx
+      case 7:// item
+        return 0; // ono conflict
+      case 2:// district
+        return 2;
+      case 4:// new_order
+        return 4;
+      case 5:// order
+        return 5;
+      case 8:// stock
+        return 8;
+      case 9:// order_line
+        return 9;
+      default:
+        return 0;
+    }
+  }
+  return 0;
+}
 
 Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_idx) {
   std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
