@@ -746,30 +746,7 @@ Status PessimisticTransaction::WaitForDependency() {
   return result;
 }
 
-unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type) {
-  if (txn_type == 0 && dep_type == 0) {
-    switch(piece_idx) {
-      case 1:// warehouse
-      case 3:// customer
-      case 6:// order_idx
-      case 7:// item
-        return 0; // ono conflict
-      case 2:// district
-        return 2;
-      case 4:// new_order
-        return 4;
-      case 5:// order
-        return 5;
-      case 8:// stock
-        return 8;
-      case 9:// order_line
-        return 9;
-      default:
-        return 0;
-    }
-  }
-  return 0;
-}
+unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type);
 
 Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_idx) {
   std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
@@ -837,6 +814,102 @@ Status PessimisticTransaction::ReleaseDirty() {
   return Status::OK();
 }
 
+  unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type) {
+    if (txn_type == 0 && dep_type == 0) {
+      switch(piece_idx) {
+        case 1: return 0;
+        case 2: return 2;
+        case 3: return 0;
+        case 4: return 4;
+        case 5: return 5;
+        case 6: return 0;
+        case 7: return 7;
+        case 8: return 8;
+        default: return 0;
+      }
+    }
+    if (txn_type == 0 && dep_type == 1) {
+      switch(piece_idx) {
+        case 1: return 1;
+        case 2: return 2;
+        case 3: return 3;
+        case 4:
+        case 5:
+        case 6:
+        case 7:
+        case 8:
+        default: return 0;
+      }
+    }
+    if (txn_type == 0 && dep_type == 2) {
+      switch(piece_idx) {
+        case 1: return 0;
+        case 2: return 0;
+        case 3: return 0;
+        case 4: return 1;
+        case 5: return 2;
+        case 6: return 0;
+        case 7: return 0;
+        case 8: return 3;
+        default: return 0;
+      }
+    }
+    if (txn_type == 1 && dep_type == 0) {
+      switch(piece_idx) {
+        case 1: return 1;
+        case 2: return 2;
+        case 3: return 3;
+        case 4:
+        default: return 0;
+      }
+    }
+    if (txn_type == 1 && dep_type == 1) {
+      switch(piece_idx) {
+        case 1: return 1;
+        case 2: return 2;
+        case 3: return 3;
+        case 4:
+        default: return 0;
+      }
+    }
+    if (txn_type == 1 && dep_type == 2) {
+      switch(piece_idx) {
+        case 1:
+        case 2: return 0;
+        case 3: return 4;
+        case 4:
+        default: return 0;
+      }
+    }
+    if (txn_type == 2 && dep_type == 0) {
+      switch(piece_idx) {
+        case 1: return 4;
+        case 2: return 5;
+        case 3: return 8;
+        case 4:
+        default: return 0;
+      }
+    }
+    if (txn_type == 2 && dep_type == 1) {
+      switch(piece_idx) {
+        case 1:
+        case 2:
+        case 3: return 0;
+        case 4: return 3;
+        default: return 0;
+      }
+    }
+    if (txn_type == 2 && dep_type == 2) {
+      switch(piece_idx) {
+        case 1: return 1;
+        case 2: return 2;
+        case 3: return 3;
+        case 4: return 4;
+        default: return 0;
+      }
+    }
+    return 0;
+  }
 }  // namespace rocksdb
 
 #endif  // ROCKSDB_LITE
