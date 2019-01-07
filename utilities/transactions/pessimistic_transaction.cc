@@ -770,7 +770,7 @@ Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_
       else if (result.IsIncomplete() && depend_txn != nullptr) {
         unsigned int dep_txn_type = depend_txn->GetTxnType();
         unsigned int dep_piece_idx = GetConflictPiece(txn_type, piece_idx, dep_txn_type);
-        if (depend_txn->GetTxnPieceIdx() >= dep_piece_idx) break;
+        if (depend_txn->GetTxnPieceIdx() >= dep_piece_idx) return Status::OK();
       }
 
       cpu_relax();
