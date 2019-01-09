@@ -66,7 +66,7 @@ namespace rocksdb {
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
       TransactionID stored_txn_id = dirty->GetTxnId();
-      if (stored_txn_id != txn_id && key.compare(dirty->GetKey()) != 0) {
+      if (stored_txn_id != txn_id || key.compare(dirty->GetKey()) != 0) {
         dirty = dirty->link_older;
         continue;
       }
