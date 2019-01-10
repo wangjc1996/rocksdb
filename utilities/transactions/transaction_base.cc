@@ -30,6 +30,7 @@ TransactionBaseImpl::TransactionBaseImpl(DB* db,
   if (dbimpl_->allow_2pc()) {
     WriteBatchInternal::InsertNoop(write_batch_.GetWriteBatch());
   }
+  depend_txn_ids_.reserve(8);
 }
 
 TransactionBaseImpl::~TransactionBaseImpl() {

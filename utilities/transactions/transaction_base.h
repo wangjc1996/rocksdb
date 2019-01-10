@@ -304,7 +304,7 @@ class TransactionBaseImpl : public Transaction {
   uint64_t num_merges_ = 0;
 
   // dirty read dependencies
-  autovector<TransactionID> depend_txn_ids_;
+  std::vector<TransactionID> depend_txn_ids_;
 
   struct SavePoint {
     std::shared_ptr<const Snapshot> snapshot_;

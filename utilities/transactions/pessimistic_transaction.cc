@@ -754,9 +754,9 @@ Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_
   Status result;
   Env* env = txn_db_impl_->GetEnv();
 
-  for (auto id : depend_txn_ids_) {
+  for (auto it = depend_txn_ids_.begin(); it != depend_txn_ids_.end();) {
 
-    TxnMetaData* dep_metadata = txn_db_impl_->GetTxnMetaData(id);
+    TxnMetaData* dep_metadata = txn_db_impl_->GetTxnMetaData(*it);
     Transaction* depend_txn = dep_metadata->txn;
 
     uint64_t start = env->NowMicros();
@@ -764,13 +764,18 @@ Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_
     do {
       now = env->NowMicros();
       result = CheckTransactionState(dep_metadata, now - start);
-      if (result.ok()) break;
-      else if (result.IsTimedOut()) return result;
+      if (result.ok()){
+        it = depend_txn_ids_.erase(it);
+        break;
+      } else if (result.IsTimedOut()) return result;
       else if (result.IsAborted()) return result;
       else if (result.IsIncomplete() && depend_txn != nullptr) {
         unsigned int dep_txn_type = depend_txn->GetTxnType();
         unsigned int dep_piece_idx = GetConflictPiece(txn_type, piece_idx, dep_txn_type);
-        if (depend_txn->GetTxnPieceIdx() >= dep_piece_idx) break;
+        if (depend_txn->GetTxnPieceIdx() >= dep_piece_idx) {
+          ++it;
+          break;
+        }
       } else if (result.IsIncomplete() && depend_txn == nullptr) {
         assert(false);
       }
