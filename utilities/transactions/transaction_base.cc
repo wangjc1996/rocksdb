@@ -45,6 +45,7 @@ void TransactionBaseImpl::Clear() {
   num_puts_ = 0;
   num_deletes_ = 0;
   num_merges_ = 0;
+  depend_txn_ids_.clear();
 
   if (dbimpl_->allow_2pc()) {
     WriteBatchInternal::InsertNoop(write_batch_.GetWriteBatch());
@@ -348,7 +349,11 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
       pinnable_val.PinSelf();
 
       // record transaction dependency
-      depend_txn_ids_.emplace_back(context.txn_id);
+      bool flag = false;
+      for (auto id : depend_txn_ids_) {
+        if (id == context.txn_id) flag = true;
+      }
+      if (!flag) depend_txn_ids_.emplace_back(context.txn_id);
 
       s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */,context.txn_id);
       return s;

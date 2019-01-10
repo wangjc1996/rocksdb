@@ -405,16 +405,16 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
 
   if (!s.ok()) return s;
 
-  s = DoLockAll();
+//  s = DoLockAll();
+//
+//  if (!s.ok()) return s;
 
-  if (!s.ok()) return s;
+//  PessimisticTransactionCallback callback(this);
+   s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+//  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
 
-  PessimisticTransactionCallback callback(this);
-  // Status s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
-  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
-
-  s = db_impl->WriteWithCallback(
-     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
+//  s = db_impl->WriteWithCallback(
+//     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
   return s;
 }
 
@@ -743,7 +743,7 @@ Status PessimisticTransaction::WaitForDependency() {
     } while (true);
   }
 
-  return result;
+  return Status::OK();
 }
 
 unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type);
@@ -770,14 +770,16 @@ Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_
       else if (result.IsIncomplete() && depend_txn != nullptr) {
         unsigned int dep_txn_type = depend_txn->GetTxnType();
         unsigned int dep_piece_idx = GetConflictPiece(txn_type, piece_idx, dep_txn_type);
-        if (depend_txn->GetTxnPieceIdx() >= dep_piece_idx) return Status::OK();
+        if (depend_txn->GetTxnPieceIdx() >= dep_piece_idx) break;
+      } else if (result.IsIncomplete() && depend_txn == nullptr) {
+        assert(false);
       }
 
       cpu_relax();
 
     } while (true);
   }
-  return result;
+  return Status::OK();
 }
 
 #undef cpu_relax
@@ -788,7 +790,7 @@ Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int6
     return Status::OK();
   } else if (state == S_ABORT) {
     return Status::Aborted();
-  } else if (used_period > 100000) { // microseconds, 0.1 second
+  } else if (used_period > 15000000) { // microseconds, 15 second
     return Status::TimedOut();
   }
   return Status::Incomplete();
@@ -815,6 +817,7 @@ Status PessimisticTransaction::ReleaseDirty() {
 }
 
   unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type) {
+    const unsigned int max_piece = 50;
     if (txn_type == 0 && dep_type == 0) {
       switch(piece_idx) {
         case 1: return 0;
@@ -825,7 +828,7 @@ Status PessimisticTransaction::ReleaseDirty() {
         case 6: return 0;
         case 7: return 7;
         case 8: return 8;
-        default: return 0;
+        default: return max_piece;
       }
     }
     if (txn_type == 0 && dep_type == 1) {
@@ -837,21 +840,21 @@ Status PessimisticTransaction::ReleaseDirty() {
         case 5:
         case 6:
         case 7:
-        case 8:
-        default: return 0;
+        case 8: return 0;
+        default: return max_piece;
       }
     }
     if (txn_type == 0 && dep_type == 2) {
       switch(piece_idx) {
-        case 1: return 0;
+        case 1:
         case 2: return 0;
-        case 3: return 0;
+        case 3: return 4;
         case 4: return 1;
         case 5: return 2;
-        case 6: return 0;
-        case 7: return 0;
+        case 6:
+        case 7:
         case 8: return 3;
-        default: return 0;
+        default: return max_piece;
       }
     }
     if (txn_type == 1 && dep_type == 0) {
@@ -859,8 +862,8 @@ Status PessimisticTransaction::ReleaseDirty() {
         case 1: return 1;
         case 2: return 2;
         case 3: return 3;
-        case 4:
-        default: return 0;
+        case 4: return 0;
+        default: return max_piece;
       }
     }
     if (txn_type == 1 && dep_type == 1) {
@@ -868,8 +871,8 @@ Status PessimisticTransaction::ReleaseDirty() {
         case 1: return 1;
         case 2: return 2;
         case 3: return 3;
-        case 4:
-        default: return 0;
+        case 4: return 0;
+        default: return max_piece;
       }
     }
     if (txn_type == 1 && dep_type == 2) {
@@ -877,8 +880,8 @@ Status PessimisticTransaction::ReleaseDirty() {
         case 1:
         case 2: return 0;
         case 3: return 4;
-        case 4:
-        default: return 0;
+        case 4: return 0;
+        default: return max_piece;
       }
     }
     if (txn_type == 2 && dep_type == 0) {
@@ -886,8 +889,8 @@ Status PessimisticTransaction::ReleaseDirty() {
         case 1: return 4;
         case 2: return 5;
         case 3: return 8;
-        case 4:
-        default: return 0;
+        case 4: return 4;
+        default: return max_piece;
       }
     }
     if (txn_type == 2 && dep_type == 1) {
@@ -896,7 +899,7 @@ Status PessimisticTransaction::ReleaseDirty() {
         case 2:
         case 3: return 0;
         case 4: return 3;
-        default: return 0;
+        default: return max_piece;
       }
     }
     if (txn_type == 2 && dep_type == 2) {
@@ -905,10 +908,10 @@ Status PessimisticTransaction::ReleaseDirty() {
         case 2: return 2;
         case 3: return 3;
         case 4: return 4;
-        default: return 0;
+        default: return max_piece;
       }
     }
-    return 0;
+    return max_piece;
   }
 }  // namespace rocksdb
 

@@ -36,6 +36,7 @@ struct TxnMetaData {
   std::atomic<SimpleState> state;
   SequenceNumber commit_seq;
   Transaction* txn;
+  unsigned int txn_type;
 
   TxnMetaData() {
     state.store(S_STARTED);
@@ -47,6 +48,7 @@ struct TxnMetaData {
     state.store(S_STARTED);
     commit_seq = 0;
     txn = transaction;
+    txn_type = transaction->GetTxnType();
   }
 };
 
