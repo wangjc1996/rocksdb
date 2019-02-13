@@ -101,7 +101,6 @@ PessimisticTransaction::~PessimisticTransaction() {
 
 void PessimisticTransaction::Clear() {
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
-  ReleaseDirty();
   TransactionBaseImpl::Clear();
 }
 
@@ -355,10 +354,12 @@ Status PessimisticTransaction::Commit() {
       if (!name_.empty()) {
         txn_db_impl_->UnregisterTransaction(this);
       }
+      ReleaseDirty();
       if (s.ok()) {
         txn_state_.store(COMMITED);
         metaData->state.store(S_COMMITED);
-        metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
+        metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch()) +
+                               WriteBatchInternal::Count(GetWriteBatch()->GetWriteBatch()) - 1;
       } else {
         metaData->state.store(S_ABORT);
       }
@@ -454,6 +455,7 @@ Status PessimisticTransaction::Rollback() {
       assert(log_number_ > 0);
       dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
           log_number_);
+      ReleaseDirty();
       Clear();
       txn_state_.store(ROLLEDBACK);
       metaData->state.store(S_ABORT);
@@ -475,6 +477,7 @@ Status PessimisticTransaction::Rollback() {
       }
     }
     // prepare couldn't have taken place
+    ReleaseDirty();
     Clear();
     txn_state_.store(ROLLEDBACK);
     metaData->state.store(S_ABORT);
