@@ -101,7 +101,6 @@ PessimisticTransaction::~PessimisticTransaction() {
 
 void PessimisticTransaction::Clear() {
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
-  ReleaseDirty();
   TransactionBaseImpl::Clear();
 }
 
@@ -355,10 +354,12 @@ Status PessimisticTransaction::Commit() {
       if (!name_.empty()) {
         txn_db_impl_->UnregisterTransaction(this);
       }
+      ReleaseDirty();
       if (s.ok()) {
         txn_state_.store(COMMITED);
         metaData->state.store(S_COMMITED);
-        metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
+        metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch()) +
+                               WriteBatchInternal::Count(GetWriteBatch()->GetWriteBatch()) - 1;
       } else {
         metaData->state.store(S_ABORT);
       }
@@ -405,16 +406,16 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
 
   if (!s.ok()) return s;
 
-//  s = DoLockAll();
-//
-//  if (!s.ok()) return s;
+  s = DoLockAll();
 
-//  PessimisticTransactionCallback callback(this);
-   s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
-//  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+  if (!s.ok()) return s;
 
-//  s = db_impl->WriteWithCallback(
-//     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
+  PessimisticTransactionCallback callback(this);
+//   s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+
+  s = db_impl->WriteWithCallback(
+     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
   return s;
 }
 
@@ -454,6 +455,7 @@ Status PessimisticTransaction::Rollback() {
       assert(log_number_ > 0);
       dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
           log_number_);
+      ReleaseDirty();
       Clear();
       txn_state_.store(ROLLEDBACK);
       metaData->state.store(S_ABORT);
@@ -475,6 +477,7 @@ Status PessimisticTransaction::Rollback() {
       }
     }
     // prepare couldn't have taken place
+    ReleaseDirty();
     Clear();
     txn_state_.store(ROLLEDBACK);
     metaData->state.store(S_ABORT);
@@ -746,39 +749,31 @@ Status PessimisticTransaction::WaitForDependency() {
   return Status::OK();
 }
 
-unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type);
+bool HasCEdge(unsigned int txn_type, unsigned int piece_idx);
 
 Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_idx) {
   std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
 
+  bool has_conflict = HasCEdge(txn_type, piece_idx);
+  if (!has_conflict) return Status::OK();
+
   Status result;
-  Env* env = txn_db_impl_->GetEnv();
+  Env *env = txn_db_impl_->GetEnv();
 
   for (auto it = depend_txn_ids_.begin(); it != depend_txn_ids_.end();) {
 
-    TxnMetaData* dep_metadata = txn_db_impl_->GetTxnMetaData(*it);
-    Transaction* depend_txn = dep_metadata->txn;
+    TxnMetaData *dep_metadata = txn_db_impl_->GetTxnMetaData(*it);
 
     uint64_t start = env->NowMicros();
     uint64_t now;
     do {
       now = env->NowMicros();
       result = CheckTransactionState(dep_metadata, now - start);
-      if (result.ok()){
+      if (result.ok()) {
         it = depend_txn_ids_.erase(it);
         break;
       } else if (result.IsTimedOut()) return result;
       else if (result.IsAborted()) return result;
-      else if (result.IsIncomplete() && depend_txn != nullptr) {
-        unsigned int dep_txn_type = depend_txn->GetTxnType();
-        unsigned int dep_piece_idx = GetConflictPiece(txn_type, piece_idx, dep_txn_type);
-        if (depend_txn->GetTxnPieceIdx() >= dep_piece_idx) {
-          ++it;
-          break;
-        }
-      } else if (result.IsIncomplete() && depend_txn == nullptr) {
-        assert(false);
-      }
 
       cpu_relax();
 
@@ -821,102 +816,39 @@ Status PessimisticTransaction::ReleaseDirty() {
   return Status::OK();
 }
 
-  unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type) {
-    const unsigned int max_piece = 50;
-    if (txn_type == 0 && dep_type == 0) {
+  bool HasCEdge(unsigned int txn_type, unsigned int piece_idx) {
+    if (txn_type == 0) {
       switch(piece_idx) {
-        case 1: return 0;
-        case 2: return 2;
-        case 3: return 0;
-        case 4: return 4;
-        case 5: return 5;
-        case 6: return 0;
-        case 7: return 7;
-        case 8: return 8;
-        default: return max_piece;
+        case 1: return false;
+        case 2: return true;
+        case 3: return false;
+        case 4: return false; // insert in new order, txn_delivery range query will not delivery dirty ones
+        case 5: return false; // insert in new order, txn_delivery range query will not delivery dirty ones
+        case 6: return false;
+        case 7: return true;
+        case 8: return false; // insert new order lines, txn_delivery will not delivery dirty ones
+        default: return true;
       }
     }
-    if (txn_type == 0 && dep_type == 1) {
+    if (txn_type == 1) {
       switch(piece_idx) {
-        case 1: return 1;
-        case 2: return 2;
-        case 3: return 3;
-        case 4:
-        case 5:
-        case 6:
-        case 7:
-        case 8: return 0;
-        default: return max_piece;
+        case 1: return true;
+        case 2: return true;
+        case 3: return true;
+        case 4: return false;
+        default: return true;
       }
     }
-    if (txn_type == 0 && dep_type == 2) {
+    if (txn_type == 2) {
       switch(piece_idx) {
-        case 1:
-        case 2: return 0;
-        case 3: return 4;
-        case 4: return 1;
-        case 5: return 2;
-        case 6:
-        case 7:
-        case 8: return 3;
-        default: return max_piece;
+        case 1: return false; // new_order can do no wait because we use range lock to prevent txns delivering same new_order, and no one else is reading new_order
+        case 2: return false; // range lock protect, won't read dirty in txn_new_order
+        case 3: return false; // range lock protect, won't read dirty in txn_new_order
+        case 4: return true;
+        default: return true;
       }
     }
-    if (txn_type == 1 && dep_type == 0) {
-      switch(piece_idx) {
-        case 1: return 1;
-        case 2: return 2;
-        case 3: return 3;
-        case 4: return 0;
-        default: return max_piece;
-      }
-    }
-    if (txn_type == 1 && dep_type == 1) {
-      switch(piece_idx) {
-        case 1: return 1;
-        case 2: return 2;
-        case 3: return 3;
-        case 4: return 0;
-        default: return max_piece;
-      }
-    }
-    if (txn_type == 1 && dep_type == 2) {
-      switch(piece_idx) {
-        case 1:
-        case 2: return 0;
-        case 3: return 4;
-        case 4: return 0;
-        default: return max_piece;
-      }
-    }
-    if (txn_type == 2 && dep_type == 0) {
-      switch(piece_idx) {
-        case 1: return 4;
-        case 2: return 5;
-        case 3: return 8;
-        case 4: return 4;
-        default: return max_piece;
-      }
-    }
-    if (txn_type == 2 && dep_type == 1) {
-      switch(piece_idx) {
-        case 1:
-        case 2:
-        case 3: return 0;
-        case 4: return 3;
-        default: return max_piece;
-      }
-    }
-    if (txn_type == 2 && dep_type == 2) {
-      switch(piece_idx) {
-        case 1: return 1;
-        case 2: return 2;
-        case 3: return 3;
-        case 4: return 4;
-        default: return max_piece;
-      }
-    }
-    return max_piece;
+    return true;
   }
 }  // namespace rocksdb
 
