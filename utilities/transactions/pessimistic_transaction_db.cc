@@ -639,9 +639,9 @@ StateInfoInternal* PessimisticTransactionDB::DoGetState(uint32_t column_family_i
   return state_mgr_.GetState(column_family_id, key);
 }
 
-TxnMetaData* PessimisticTransactionDB::InsertTransaction(TransactionID tx_id) {
+TxnMetaData* PessimisticTransactionDB::InsertTransaction(TransactionID tx_id, Transaction* transaction) {
   std::lock_guard<std::mutex> lock(id_map_mutex_);
-  TxnMetaData* metaData = new TxnMetaData();
+  TxnMetaData* metaData = new TxnMetaData(transaction);
   id_transactions_[tx_id] = metaData;
   return metaData;
 }

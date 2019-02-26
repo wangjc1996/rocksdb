@@ -86,7 +86,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
   use_only_the_last_commit_time_batch_for_recovery_ =
       txn_options.use_only_the_last_commit_time_batch_for_recovery;
 
-  metaData = txn_db_impl_->InsertTransaction(GetID());
+  metaData = txn_db_impl_->InsertTransaction(GetID(), this);
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
@@ -101,7 +101,6 @@ PessimisticTransaction::~PessimisticTransaction() {
 
 void PessimisticTransaction::Clear() {
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
-  ReleaseDirty();
   TransactionBaseImpl::Clear();
 }
 
@@ -355,10 +354,12 @@ Status PessimisticTransaction::Commit() {
       if (!name_.empty()) {
         txn_db_impl_->UnregisterTransaction(this);
       }
+      ReleaseDirty();
       if (s.ok()) {
         txn_state_.store(COMMITED);
         metaData->state.store(S_COMMITED);
-        metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
+        metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch()) +
+                               WriteBatchInternal::Count(GetWriteBatch()->GetWriteBatch()) - 1;
       } else {
         metaData->state.store(S_ABORT);
       }
@@ -410,7 +411,7 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
   if (!s.ok()) return s;
 
   PessimisticTransactionCallback callback(this);
-  // Status s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+//   s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
   DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
 
   s = db_impl->WriteWithCallback(
@@ -454,6 +455,7 @@ Status PessimisticTransaction::Rollback() {
       assert(log_number_ > 0);
       dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
           log_number_);
+      ReleaseDirty();
       Clear();
       txn_state_.store(ROLLEDBACK);
       metaData->state.store(S_ABORT);
@@ -475,6 +477,7 @@ Status PessimisticTransaction::Rollback() {
       }
     }
     // prepare couldn't have taken place
+    ReleaseDirty();
     Clear();
     txn_state_.store(ROLLEDBACK);
     metaData->state.store(S_ABORT);
@@ -717,11 +720,12 @@ Status PessimisticTransaction::DoLockAll() {
   return Status::OK();
 }
 
+#define cpu_relax() __asm__ __volatile__("pause\n": : :"memory")
+
 Status PessimisticTransaction::WaitForDependency() {
   std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
 
   Status result;
-
   Env* env = txn_db_impl_->GetEnv();
 
   for (auto id : depend_txn_ids_) {
@@ -737,21 +741,56 @@ Status PessimisticTransaction::WaitForDependency() {
       else if (result.IsTimedOut()) return result;
       else if (result.IsAborted()) return result;
 
-      __asm volatile("pause" : :);
+      cpu_relax();
 
     } while (true);
   }
 
-  return result;
+  return Status::OK();
 }
 
+bool HasCEdge(unsigned int txn_type, unsigned int piece_idx);
+
+Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_idx) {
+  std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
+
+  bool has_conflict = HasCEdge(txn_type, piece_idx);
+  if (!has_conflict) return Status::OK();
+
+  Status result;
+  Env *env = txn_db_impl_->GetEnv();
+
+  for (auto it = depend_txn_ids_.begin(); it != depend_txn_ids_.end();) {
+
+    TxnMetaData *dep_metadata = txn_db_impl_->GetTxnMetaData(*it);
+
+    uint64_t start = env->NowMicros();
+    uint64_t now;
+    do {
+      now = env->NowMicros();
+      result = CheckTransactionState(dep_metadata, now - start);
+      if (result.ok()) {
+        it = depend_txn_ids_.erase(it);
+        break;
+      } else if (result.IsTimedOut()) return result;
+      else if (result.IsAborted()) return result;
+
+      cpu_relax();
+
+    } while (true);
+  }
+  return Status::OK();
+}
+
+#undef cpu_relax
+
 Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int64_t used_period) {
-  SimpleState  state = metadata->state;
+  SimpleState state = metadata->state;
   if (state == S_COMMITED) {
     return Status::OK();
   } else if (state == S_ABORT) {
     return Status::Aborted();
-  } else if (used_period > 100000) { // microseconds, 0.1 second
+  } else if (used_period > 15000000) { // microseconds, 15 second
     return Status::TimedOut();
   }
   return Status::Incomplete();
@@ -777,6 +816,40 @@ Status PessimisticTransaction::ReleaseDirty() {
   return Status::OK();
 }
 
+  bool HasCEdge(unsigned int txn_type, unsigned int piece_idx) {
+    if (txn_type == 0) {
+      switch(piece_idx) {
+        case 1: return false;
+        case 2: return true;
+        case 3: return false;
+        case 4: return false; // insert in new order, txn_delivery range query will not delivery dirty ones
+        case 5: return false; // insert in new order, txn_delivery range query will not delivery dirty ones
+        case 6: return false;
+        case 7: return true;
+        case 8: return false; // insert new order lines, txn_delivery will not delivery dirty ones
+        default: return true;
+      }
+    }
+    if (txn_type == 1) {
+      switch(piece_idx) {
+        case 1: return true;
+        case 2: return true;
+        case 3: return true;
+        case 4: return false;
+        default: return true;
+      }
+    }
+    if (txn_type == 2) {
+      switch(piece_idx) {
+        case 1: return false; // new_order can do no wait because we use range lock to prevent txns delivering same new_order, and no one else is reading new_order
+        case 2: return false; // range lock protect, won't read dirty in txn_new_order
+        case 3: return false; // range lock protect, won't read dirty in txn_new_order
+        case 4: return true;
+        default: return true;
+      }
+    }
+    return true;
+  }
 }  // namespace rocksdb
 
 #endif  // ROCKSDB_LITE
