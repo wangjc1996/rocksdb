@@ -12,7 +12,6 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "db/dbformat.h"
 #include "port/port_posix.h"
@@ -22,6 +21,7 @@ namespace rocksdb {
 
 class RWMutex;
 class DirtyVersion;
+class ReadRecord;
 
 typedef uint64_t SequenceNumber;
 using TransactionID = uint64_t;
@@ -31,7 +31,17 @@ using std::string;
 struct DirtyReadBufferContext {
   bool *found_dirty = nullptr;
   SequenceNumber seq = 0;
+  // dirty value written by which txn
   TransactionID txn_id = 0;
+  // txn operating the dirty read
+  TransactionID self_txn_id = 0;
+};
+
+struct DirtyWriteBufferContext {
+    // w-w dependency id
+    TransactionID wrtie_txn_id = 0;
+    // anti-dependency ids
+    std::vector<TransactionID> read_txn_ids;
 };
 
 class DirtyBuffer {
@@ -41,7 +51,7 @@ class DirtyBuffer {
 
   ~DirtyBuffer();
 
-  Status Put(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id);
+  Status Put(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context);
 
   Status GetDirty(const Slice& key, std::string* value, DirtyReadBufferContext* context);
 
@@ -89,9 +99,35 @@ class DirtyVersion {
   DirtyVersion* link_older = nullptr;
   DirtyVersion* link_newer = nullptr;
 
+  ReadRecord* readRecord = nullptr;
+
   // No copying allowed
   DirtyVersion(const DirtyVersion&);
   DirtyVersion& operator=(const DirtyVersion&);
+
+};
+
+class ReadRecord {
+ public:
+
+  explicit ReadRecord(TransactionID txn_id);
+
+  ~ReadRecord();
+
+  inline TransactionID GetTxnId() { return txn_id_; };
+
+ private:
+
+  friend class DirtyBuffer;
+  friend class DirtyVersion;
+
+  TransactionID txn_id_;
+
+  ReadRecord* link_older = nullptr;
+
+  // No copying allowed
+  ReadRecord(const ReadRecord&);
+  ReadRecord& operator=(const ReadRecord&);
 
 };
 
