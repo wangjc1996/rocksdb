@@ -335,6 +335,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
     context.found_dirty = &found_dirty;
     context.seq = 0;
     context.txn_id = 0;
+    context.self_txn_id = GetID();
 
     std::string *buffer_value = pinnable_val.GetSelf();
 
@@ -349,7 +350,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
     if (s.ok() && found_dirty) {
       pinnable_val.PinSelf();
 
-      // record transaction dependency
+      // record r-w dependency
       bool flag = false;
       for (auto id : depend_txn_ids_) {
         if (id == context.txn_id) flag = true;
@@ -378,7 +379,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 }
 
 Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
-                                const Slice& key, const Slice& value, bool optimistic) {
+                                const Slice& key, const Slice& value, bool optimistic, bool is_dirty_read) {
   Status s;
 
   if (optimistic) {
@@ -399,7 +400,28 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
       seq = db_->GetLatestSequenceNumber();
     }
 
-    s = dbimpl_->WriteDirty(column_family, key, value, seq, GetID());
+    if (is_dirty_read) {
+      // put a uncommitted version into dirty buffer & track w-w, anti-dependencies
+      DirtyWriteBufferContext context{};
+      s = dbimpl_->WriteDirty(column_family, key, value, seq, GetID(), &context);
+
+      // record w-w dependency
+      if (context.wrtie_txn_id != 0) {
+        bool flag = false;
+        for (auto id : depend_txn_ids_) {
+          if (id == context.wrtie_txn_id) flag = true;
+        }
+        if (!flag) depend_txn_ids_.emplace_back(context.wrtie_txn_id);
+      }
+      // record anti-dependency
+      for (auto read_txn_id : context.read_txn_ids) {
+        bool flag = false;
+        for (auto id : depend_txn_ids_) {
+          if (id == read_txn_id) flag = true;
+        }
+        if (!flag) depend_txn_ids_.emplace_back(read_txn_id);
+      }
+    }
   }
 
   return s;

@@ -33,16 +33,12 @@ enum SimpleState {
 };
 
 struct TxnMetaData {
+  char padding_front[64];
   std::atomic<SimpleState> state;
   SequenceNumber commit_seq;
   Transaction* txn;
   unsigned int txn_type;
-
-  TxnMetaData() {
-    state.store(S_STARTED);
-    commit_seq = 0;
-    txn = nullptr;
-  }
+  char padding_end[64];
 
   TxnMetaData(Transaction* transaction) {
     state.store(S_STARTED);

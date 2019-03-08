@@ -198,10 +198,12 @@ Status TransactionUtil::CheckKeysForConflicts(PessimisticTransaction* txn,
             result = Status::Busy();
             break;
           } else {
+            // dirty read validation
             TxnMetaData* metaData = txn_db_impl->GetTxnMetaData(key_iter.second.dependent_txn);
             result = CheckKey(db_impl, sv, earliest_seq, metaData->commit_seq, key, cache_only);
           }
         } else {
+          // clean read validation
           result = CheckKey(db_impl, sv, earliest_seq, key_seq, key, cache_only);
         }
 
