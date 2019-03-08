@@ -1,17 +1,18 @@
 #pragma once
 namespace rocksdb {
 
-static constexpr uint8_t kTotalStates = 3;
+static constexpr uint8_t kTotalStates = 4;
 
-static constexpr uint8_t kOptimisticCleanReadIndex = 0;
-static constexpr uint8_t kOptimisticDirtyReadIndex = 1;
-static constexpr uint8_t kOptimisticWriteIndex = 2;
+static constexpr uint8_t kCleanReadIndex = 0;
+static constexpr uint8_t kDirtyReadIndex = 1;
+static constexpr uint8_t kCleanWriteIndex = 2;
+static constexpr uint8_t kDirtyWriteIndex = 3;
 
 template <bool read, bool is_dirty>
 static constexpr uint8_t GetStateIndex() {
   return read
-         ? (is_dirty ? kOptimisticDirtyReadIndex : kOptimisticCleanReadIndex)
-         : kOptimisticWriteIndex;
+         ? (is_dirty ? kDirtyReadIndex : kCleanReadIndex)
+         : (is_dirty ? kDirtyWriteIndex : kCleanWriteIndex);
 }
 
 using StateUnit = uint16_t;

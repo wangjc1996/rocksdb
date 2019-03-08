@@ -819,9 +819,9 @@ Status PessimisticTransaction::ReleaseDirty() {
   bool HasCEdge(unsigned int txn_type, unsigned int piece_idx) {
     if (txn_type == 0) {
       switch(piece_idx) {
-        case 1: return false;
+        case 1: return true;
         case 2: return true;
-        case 3: return false;
+        case 3: return true;
         case 4: return false; // insert in new order, txn_delivery range query will not delivery dirty ones
         case 5: return false; // insert in new order, txn_delivery range query will not delivery dirty ones
         case 6: return false;
