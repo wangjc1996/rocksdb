@@ -848,6 +848,19 @@ Status PessimisticTransaction::ReleaseDirty() {
         default: return true;
       }
     }
+    if (txn_type == 3) {
+      switch(piece_idx) {
+        case 1: return true; // read customer
+        default: return true;
+      }
+    }
+    if (txn_type == 4) {
+      switch(piece_idx) {
+        case 1: return true; // read district
+        case 2: return true; // read stock
+        default: return true;
+      }
+    }
     return true;
   }
 }  // namespace rocksdb
