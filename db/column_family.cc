@@ -492,6 +492,8 @@ ColumnFamilyData::~ColumnFamilyData() {
   prev->next_ = next;
   next->prev_ = prev;
 
+  delete dirty_buffer_;
+
   if (!dropped_ && column_family_set_ != nullptr) {
     // If it's dropped, it's already removed from column family set
     // If column_family_set_ == nullptr, this is dummy CFD and not in

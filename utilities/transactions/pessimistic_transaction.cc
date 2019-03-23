@@ -97,6 +97,7 @@ PessimisticTransaction::~PessimisticTransaction() {
   if (!name_.empty() && txn_state_ != COMMITED) {
     txn_db_impl_->UnregisterTransaction(this);
   }
+  txn_db_impl_->RemoveTransaction(txn_id_);
 }
 
 void PessimisticTransaction::Clear() {

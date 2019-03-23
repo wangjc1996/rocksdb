@@ -650,6 +650,7 @@ void PessimisticTransactionDB::RemoveTransaction(TransactionID tx_id) {
   std::lock_guard<std::mutex> lock(id_map_mutex_);
   auto it = id_transactions_.find(tx_id);
   assert(it != id_transactions_.end());
+  delete it->second;
   id_transactions_.erase(it);
 }
 

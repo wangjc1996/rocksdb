@@ -20,7 +20,7 @@ namespace rocksdb {
   }
 
   DirtyBuffer::~DirtyBuffer() {
-
+    delete[] dirty_array_;
   }
 
   Status DirtyBuffer::Put(const Slice &key, const Slice &value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
