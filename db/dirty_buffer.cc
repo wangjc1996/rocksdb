@@ -9,6 +9,8 @@
 
 #include "db/dirty_buffer.h"
 
+using std::lock_guard;
+
 namespace rocksdb {
 
 
@@ -25,7 +27,7 @@ namespace rocksdb {
 
   Status DirtyBuffer::Put(const Slice &key, const Slice &value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
     int position = GetPosition(key);
-    WriteLock wl(GetLock(position));
+    lock_guard<mutex> lock_guard(*GetLock(position));
 
     //get dependency ids
     auto *dirty = dirty_array_[position];
@@ -62,7 +64,7 @@ namespace rocksdb {
 
   Status DirtyBuffer::GetDirty(const Slice &key, std::string *value, DirtyReadBufferContext *context) {
     int position = GetPosition(key);
-    WriteLock wl(GetLock(position));
+    lock_guard<mutex> lock_guard(*GetLock(position));
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
       if (key.compare(dirty->GetKey()) != 0) {
@@ -88,7 +90,7 @@ namespace rocksdb {
 
   Status DirtyBuffer::Remove(const Slice &key, TransactionID txn_id) {
     int position = GetPosition(key);
-    WriteLock wl(GetLock(position));
+    lock_guard<mutex> lock_guard(*GetLock(position));
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
       TransactionID stored_txn_id = dirty->GetTxnId();
@@ -131,7 +133,7 @@ namespace rocksdb {
     return static_cast<int>(hash(key) % size_);
   }
 
-  port::RWMutex *DirtyBuffer::GetLock(const int pos) {
+  mutex *DirtyBuffer::GetLock(const int pos) {
     return &locks_[pos];
   }
 

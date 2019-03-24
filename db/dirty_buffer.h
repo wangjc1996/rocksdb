@@ -12,14 +12,13 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <mutex>
 
 #include "db/dbformat.h"
-#include "port/port_posix.h"
 #include "util/murmurhash.h"
 
 namespace rocksdb {
 
-class RWMutex;
 class DirtyVersion;
 class ReadRecord;
 
@@ -27,6 +26,7 @@ typedef uint64_t SequenceNumber;
 using TransactionID = uint64_t;
 
 using std::string;
+using std::mutex;
 
 struct DirtyReadBufferContext {
   bool *found_dirty = nullptr;
@@ -59,13 +59,13 @@ class DirtyBuffer {
 
  private:
   uint32_t column_family_id_;
-  std::vector<port::RWMutex> locks_;
+  std::vector<mutex> locks_;
   int size_;
 
   DirtyVersion **dirty_array_;
 
   int GetPosition(const Slice &key);
-  port::RWMutex* GetLock(const int pos);
+  mutex* GetLock(const int pos);
 
   // No copying allowed
   DirtyBuffer(const DirtyBuffer&);
