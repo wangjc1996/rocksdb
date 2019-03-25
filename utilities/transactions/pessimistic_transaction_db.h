@@ -197,7 +197,7 @@ class PessimisticTransactionDB : public TransactionDB {
   std::mutex name_map_mutex_;
   std::unordered_map<TransactionName, Transaction*> transactions_;
 
-  // map from name to two phase transaction instance
+  // map from ID to metadata of this transaction
   std::mutex id_map_mutex_;
   std::unordered_map<TransactionID, TxnMetaData*> id_transactions_;
 

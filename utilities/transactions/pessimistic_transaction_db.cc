@@ -83,6 +83,9 @@ PessimisticTransactionDB::~PessimisticTransactionDB() {
     // TODO(myabandeh): this seems to be an unsafe approach as it is not quite
     // clear whether delete would also remove the entry from transactions_.
   }
+  for (auto &id_transaction : id_transactions_) {
+    delete id_transaction.second;
+  }
 }
 
 Status PessimisticTransactionDB::VerifyCFOptions(const ColumnFamilyOptions&) {
