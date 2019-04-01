@@ -749,13 +749,10 @@ Status PessimisticTransaction::WaitForDependency() {
   return Status::OK();
 }
 
-bool HasCEdge(unsigned int txn_type, unsigned int piece_idx);
+unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type);
 
 Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_idx) {
   std::sort(depend_txn_ids_.begin(), depend_txn_ids_.end());
-
-  bool has_conflict = HasCEdge(txn_type, piece_idx);
-  if (!has_conflict) return Status::OK();
 
   Status result;
   Env *env = txn_db_impl_->GetEnv();
@@ -764,13 +761,17 @@ Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_
 
     TxnMetaData *dep_metadata = txn_db_impl_->GetTxnMetaData(*it);
 
+    unsigned int conflict_piece = GetConflictPiece(txn_type, piece_idx, dep_metadata->txn_type);
+
     uint64_t start = env->NowMicros();
     uint64_t now;
+
     do {
       now = env->NowMicros();
-      result = CheckTransactionState(dep_metadata, now - start);
+      result = CheckTransactionState(dep_metadata, now - start, conflict_piece);
       if (result.ok()) {
-        it = depend_txn_ids_.erase(it);
+        if (conflict_piece == UINT_MAX) it = depend_txn_ids_.erase(it);
+        else ++it;
         break;
       } else if (result.IsTimedOut()) return result;
       else if (result.IsAborted()) return result;
@@ -784,13 +785,21 @@ Status PessimisticTransaction::DoWait(unsigned int txn_type, unsigned int piece_
 
 #undef cpu_relax
 
-Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int64_t used_period) {
+Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int64_t used_period, unsigned int conflict_piece) {
   SimpleState state = metadata->state;
+
+  if (conflict_piece == 0) {
+    return Status::OK();
+  }
+
   if (state == S_COMMITED) {
     return Status::OK();
   } else if (state == S_ABORT) {
     return Status::Aborted();
-  } else if (used_period > 15000000) { // microseconds, 15 second
+  } else if (conflict_piece != UINT_MAX && metadata->current_piece_idx >= conflict_piece) {
+    return Status::OK();
+  } else if (used_period > 15000000) { // 15000 microseconds
+//    printf("!!!!!!!!!Timeout\n");
     return Status::TimedOut();
   }
   return Status::Incomplete();
@@ -816,53 +825,63 @@ Status PessimisticTransaction::ReleaseDirty() {
   return Status::OK();
 }
 
-  bool HasCEdge(unsigned int txn_type, unsigned int piece_idx) {
-    if (txn_type == 0) {
-      switch(piece_idx) {
-        case 1: return true;
-        case 2: return true;
-        case 3: return true;
-        case 4: return false; // insert in new order, txn_delivery range query will not delivery dirty ones
-        case 5: return false; // insert in new order, txn_delivery range query will not delivery dirty ones
-        case 6: return false;
-        case 7: return true;
-        case 8: return false; // insert new order lines, txn_delivery will not delivery dirty ones
-        default: return true;
-      }
+void PessimisticTransaction::SetTxnPieceIdx(unsigned int idx) {
+  metaData->current_piece_idx.store(idx);
+}
+
+void PessimisticTransaction::SetTxnType(unsigned int type) {
+  metaData->txn_type = type;
+}
+
+unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type) {
+  // 0 means no conflict, UINT_MAX means should wait for the entir transaction
+  if (txn_type == 0 && dep_type == 0) {
+    switch(piece_idx) {
+      case 1: return 0;
+      case 2: return 2;
+      case 3: return 0;
+      case 4: return 0;
+      case 5: return 5;
+      case 6: return 0;
+      case 7: return 0;
+      case 8: return 0;
+      default: return UINT_MAX;
     }
-    if (txn_type == 1) {
-      switch(piece_idx) {
-        case 1: return true;
-        case 2: return true;
-        case 3: return true;
-        case 4: return false;
-        default: return true;
-      }
-    }
-    if (txn_type == 2) {
-      switch(piece_idx) {
-        case 1: return false; // new_order can do no wait because we use range lock to prevent txns delivering same new_order, and no one else is reading new_order
-        case 2: return false; // range lock protect, won't read dirty in txn_new_order
-        case 3: return false; // range lock protect, won't read dirty in txn_new_order
-        case 4: return true;
-        default: return true;
-      }
-    }
-    if (txn_type == 3) {
-      switch(piece_idx) {
-        case 1: return true; // read customer
-        default: return true;
-      }
-    }
-    if (txn_type == 4) {
-      switch(piece_idx) {
-        case 1: return true; // read district
-        case 2: return true; // read stock
-        default: return true;
-      }
-    }
-    return true;
   }
+  if (txn_type == 0 && dep_type == 1) {
+    switch(piece_idx) {
+      case 1: return 1;
+      case 2: return 2;
+      case 3: return 3;
+      case 4: return 0;
+      case 5: return UINT_MAX;
+      case 6: return 0;
+      case 7: return 0;
+      case 8: return 0;
+      default: return UINT_MAX;
+    }
+  }
+  if (txn_type == 1 && dep_type == 0) {
+    switch(piece_idx) {
+      case 1: return 1;
+      case 2: return 2;
+      case 3: return 3;
+      case 4: return 0;
+      default: return UINT_MAX;
+    }
+  }
+  if (txn_type == 1 && dep_type == 1) {
+    switch(piece_idx) {
+      case 1: return 1;
+      case 2: return 2;
+      case 3: return 3;
+      case 4: return 0;
+      default: return UINT_MAX;
+    }
+  }
+//  printf("my_type - %d dep_type - %d piece - %d wrong%d~~~~~~~~~~~~~~~~~~~~~~~~~~\n",txn_type, dep_type, piece_idx, UINT_MAX);
+  return UINT_MAX;
+}
 }  // namespace rocksdb
 
 #endif  // ROCKSDB_LITE

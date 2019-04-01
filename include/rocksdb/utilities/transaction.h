@@ -457,11 +457,9 @@ class Transaction {
     LOCKS_STOLEN = 7,
   };
 
-  unsigned int GetTxnType() { return txn_type_; }
-  void SetTxnType(unsigned int type) { txn_type_ = type; piece_idx_.store(0); }
+  virtual void SetTxnType(unsigned int type) { (void)type; }
 
-  unsigned int GetTxnPieceIdx() { return piece_idx_; }
-  void SetTxnPieceIdx(unsigned int idx) { piece_idx_.store(idx); }
+  virtual void SetTxnPieceIdx(unsigned int idx) { (void)idx; };
 
   virtual Status DoWait(unsigned int txn_type, unsigned int piece_idx) = 0;
 
@@ -505,10 +503,6 @@ class Transaction {
   // (for two phase commit)
   uint64_t log_number_;
   TransactionName name_;
-
-  // txn info
-  unsigned int txn_type_;
-  std::atomic<unsigned int> piece_idx_;
 
   // Execution status of the transaction.
   std::atomic<TransactionState> txn_state_;

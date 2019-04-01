@@ -35,6 +35,7 @@ enum SimpleState {
 struct TxnMetaData {
   char padding_front[64];
   std::atomic<SimpleState> state;
+  std::atomic<unsigned int> current_piece_idx;
   SequenceNumber commit_seq;
   Transaction* txn;
   unsigned int txn_type;
@@ -42,9 +43,10 @@ struct TxnMetaData {
 
   TxnMetaData(Transaction* transaction) {
     state.store(S_STARTED);
+    current_piece_idx.store(0);
     commit_seq = 0;
     txn = transaction;
-    txn_type = transaction->GetTxnType();
+    txn_type = UINT_MAX;
   }
 };
 

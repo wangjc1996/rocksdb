@@ -113,6 +113,10 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   int64_t GetDeadlockDetectDepth() const { return deadlock_detect_depth_; }
 
+  void SetTxnPieceIdx(unsigned int idx) override;
+
+  void SetTxnType(unsigned int type) override;
+
  protected:
   Status DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false) override;
   // Refer to
@@ -144,7 +148,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   Status WaitForDependency();
 
-  Status CheckTransactionState(TxnMetaData* metadata, int64_t used_period);
+  static Status CheckTransactionState(TxnMetaData* metadata, int64_t used_period, unsigned int conflict_piece = UINT_MAX);
 
   Status ReleaseDirty();
 
