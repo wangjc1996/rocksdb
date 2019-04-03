@@ -36,17 +36,17 @@ namespace rocksdb {
         dirty = dirty->link_older;
         continue;
       }
-      // w-w dependency
-      context->wrtie_txn_id = dirty->GetTxnId();
-      // anti-dependency
-      auto *pending = dirty->readRecord;
-      while (pending != nullptr) {
-        if (pending->txn_id_ != txn_id) {
-          context->read_txn_ids.emplace_back(pending->txn_id_);
-        }
-        pending = pending->link_older;
+
+      if (dirty->is_write) {
+        // w-w dependency
+        context->wrtie_txn_id = dirty->GetTxnId();
+        break;
+      } else {
+        // anti-dependency
+        context->read_txn_ids.emplace_back(dirty->txn_id_);
+        dirty = dirty->link_older;
+        continue;
       }
-      break;
     }
 
     auto *current = new DirtyVersion(key, value, seq, txn_id);
@@ -65,24 +65,30 @@ namespace rocksdb {
   Status DirtyBuffer::GetDirty(const Slice &key, std::string *value, DirtyReadBufferContext *context) {
     int position = GetPosition(key);
     lock_guard<mutex> lock_guard(*GetLock(position));
+
+    // record read operation
+    auto *current = new DirtyVersion(key, context->self_txn_id);
+    auto *header = dirty_array_[position];
+    if (header == nullptr) {
+      dirty_array_[position] = current;
+    } else {
+      current->link_older = header;
+      header->link_newer = current;
+      dirty_array_[position] = current;
+    }
+
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
-      if (key.compare(dirty->GetKey()) != 0) {
+      if (key.compare(dirty->GetKey()) != 0 || !dirty->is_write) {
         dirty = dirty->link_older;
         continue;
       }
-      *(context->found_dirty) = true;
-      Slice stored_value = dirty->GetValue();
+      context->found_dirty = true;
+      assert(dirty->write_info != nullptr);
+      Slice stored_value = dirty->write_info->GetValue();
       value->assign(stored_value.data(), stored_value.size());
-      context->seq = dirty->GetSeq();
+      context->seq = dirty->write_info->GetSeq();
       context->txn_id = dirty->GetTxnId();
-      // record dirty read operation
-      auto *new_record = new ReadRecord(context->self_txn_id);
-      if (dirty->readRecord != nullptr) {
-        auto *old_header = dirty->readRecord;
-        new_record->link_older = old_header;
-      }
-      dirty->readRecord = new_record;
       return Status::OK();
     }
     return Status::NotFound();
@@ -138,26 +144,26 @@ namespace rocksdb {
   }
 
   DirtyVersion::DirtyVersion(const Slice &key, const Slice &value, SequenceNumber seq, TransactionID txn_id)
-      : key_(key), value_(value), seq_(seq), txn_id_(txn_id) {
+      : key_(key), txn_id_(txn_id) {
+    is_write = true;
+    write_info = new WriteInfo(value, seq);
+  }
 
+  DirtyVersion::DirtyVersion(const Slice &key, TransactionID txn_id)
+    : key_(key), txn_id_(txn_id) {
+    is_write = false;
+    write_info = nullptr;
   }
 
   DirtyVersion::~DirtyVersion() {
-    if (readRecord != nullptr) {
-      auto *pending = readRecord;
-      while (pending != nullptr) {
-        auto *current = pending;
-        pending = current->link_older;
-        delete current;
-      }
-    }
+      delete write_info;
   }
 
-  ReadRecord::ReadRecord(TransactionID txn_id) : txn_id_(txn_id) {
-
+  WriteInfo::WriteInfo(const Slice& value, SequenceNumber seq)
+      : value_(value), seq_(seq) {
   }
 
-  ReadRecord::~ReadRecord() {
+  WriteInfo::~WriteInfo() {
 
   }
 

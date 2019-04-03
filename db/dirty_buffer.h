@@ -20,7 +20,7 @@
 namespace rocksdb {
 
 class DirtyVersion;
-class ReadRecord;
+class WriteInfo;
 
 typedef uint64_t SequenceNumber;
 using TransactionID = uint64_t;
@@ -29,7 +29,7 @@ using std::string;
 using std::mutex;
 
 struct DirtyReadBufferContext {
-  bool *found_dirty = nullptr;
+  bool found_dirty = false;
   SequenceNumber seq = 0;
   // dirty value written by which txn
   TransactionID txn_id = 0;
@@ -77,13 +77,11 @@ class DirtyVersion {
 
   explicit DirtyVersion(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id);
 
+  explicit DirtyVersion(const Slice& key, TransactionID txn_id);
+
   ~DirtyVersion();
 
   inline Slice GetKey() { return key_; };
-
-  inline Slice GetValue() { return value_; };
-
-  inline SequenceNumber GetSeq() { return seq_; };
 
   inline TransactionID GetTxnId() { return txn_id_; };
 
@@ -91,15 +89,15 @@ class DirtyVersion {
 
   friend class DirtyBuffer;
 
+  bool is_write;
+
   Slice key_;
-  Slice value_;
-  SequenceNumber seq_;
   TransactionID txn_id_;
+
+  WriteInfo* write_info = nullptr;
 
   DirtyVersion* link_older = nullptr;
   DirtyVersion* link_newer = nullptr;
-
-  ReadRecord* readRecord = nullptr;
 
   // No copying allowed
   DirtyVersion(const DirtyVersion&);
@@ -107,27 +105,27 @@ class DirtyVersion {
 
 };
 
-class ReadRecord {
- public:
+class WriteInfo {
+public:
 
-  explicit ReadRecord(TransactionID txn_id);
+  explicit WriteInfo(const Slice& value, SequenceNumber seq);
 
-  ~ReadRecord();
+  ~WriteInfo();
 
-  inline TransactionID GetTxnId() { return txn_id_; };
+  inline Slice GetValue() { return value_; };
 
- private:
+  inline SequenceNumber GetSeq() { return seq_; };
 
-  friend class DirtyBuffer;
+private:
+
   friend class DirtyVersion;
 
-  TransactionID txn_id_;
-
-  ReadRecord* link_older = nullptr;
+  Slice value_;
+  SequenceNumber seq_;
 
   // No copying allowed
-  ReadRecord(const ReadRecord&);
-  ReadRecord& operator=(const ReadRecord&);
+  WriteInfo(const WriteInfo&);
+  WriteInfo& operator=(const WriteInfo&);
 
 };
 

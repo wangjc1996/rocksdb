@@ -816,9 +816,7 @@ Status PessimisticTransaction::ReleaseDirty() {
     const auto& keys = key_map_iter.second;
     for (auto& key_iter : keys) {
       const auto& key = key_iter.first;
-      const bool is_write = key_iter.second.exclusive;
-      if (is_write)
-        s = dbimpl_->RemoveDirty(cf, key, GetID());
+      s = dbimpl_->RemoveDirty(cf, key, GetID());
       if (!s.ok()) return s;
     }
   }
@@ -838,8 +836,8 @@ unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, uns
   if (txn_type == 0 && dep_type == 0) {
     switch(piece_idx) {
       case 1: return 0;
-      case 2: return 2;
-      case 3: return 0;
+      case 2: return 0;
+      case 3: return 3;
       case 4: return 0;
       case 5: return 5;
       case 6: return 0;

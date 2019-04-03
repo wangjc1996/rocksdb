@@ -331,10 +331,6 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
   if (is_dirty_read) {
 
     DirtyReadBufferContext context{};
-    bool found_dirty = false;
-    context.found_dirty = &found_dirty;
-    context.seq = 0;
-    context.txn_id = 0;
     context.self_txn_id = GetID();
 
     std::string *buffer_value = pinnable_val.GetSelf();
@@ -347,15 +343,13 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 
     // Second find in dirty buffer
     s = dbimpl_->GetDirty(column_family, key, buffer_value, &context);
-    if (s.ok() && found_dirty) {
+    if (s.ok() && context.found_dirty) {
       pinnable_val.PinSelf();
 
       // record r-w dependency
-      bool flag = false;
-      for (auto id : depend_txn_ids_) {
-        if (id == context.txn_id) flag = true;
+      if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), context.txn_id) == depend_txn_ids_.end()) {
+        depend_txn_ids_.emplace_back(context.txn_id);
       }
-      if (!flag) depend_txn_ids_.emplace_back(context.txn_id);
 
       s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */,context.txn_id);
       return s;
@@ -407,19 +401,15 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
 
       // record w-w dependency
       if (context.wrtie_txn_id != 0) {
-        bool flag = false;
-        for (auto id : depend_txn_ids_) {
-          if (id == context.wrtie_txn_id) flag = true;
+        if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), context.wrtie_txn_id) == depend_txn_ids_.end()) {
+          depend_txn_ids_.emplace_back(context.wrtie_txn_id);
         }
-        if (!flag) depend_txn_ids_.emplace_back(context.wrtie_txn_id);
       }
       // record anti-dependency
       for (auto read_txn_id : context.read_txn_ids) {
-        bool flag = false;
-        for (auto id : depend_txn_ids_) {
-          if (id == read_txn_id) flag = true;
+        if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), read_txn_id) == depend_txn_ids_.end()) {
+          depend_txn_ids_.emplace_back(read_txn_id);
         }
-        if (!flag) depend_txn_ids_.emplace_back(read_txn_id);
       }
     }
   }
