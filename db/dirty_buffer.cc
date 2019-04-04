@@ -22,24 +22,30 @@ namespace rocksdb {
   }
 
   DirtyBuffer::~DirtyBuffer() {
+    for (int position = 0; position < size_; ++position) {
+      auto *dirty = dirty_array_[position];
+      // make sure buffer is clean
+      if (dirty != nullptr) assert(false);
+    }
+
     delete[] dirty_array_;
   }
 
-  Status DirtyBuffer::Put(const Slice &key, const Slice &value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
+  Status DirtyBuffer::Put(const string &key, const string &value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
     int position = GetPosition(key);
     lock_guard<mutex> lock_guard(*GetLock(position));
 
     //get dependency ids
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
-      if (key.compare(dirty->GetKey()) != 0 || dirty->txn_id_ == txn_id) {
+      if (key.compare(dirty->key_) != 0 || dirty->txn_id_ == txn_id) {
         dirty = dirty->link_older;
         continue;
       }
 
       if (dirty->is_write) {
         // w-w dependency
-        context->wrtie_txn_id = dirty->GetTxnId();
+        context->wrtie_txn_id = dirty->txn_id_;
         break;
       } else {
         // anti-dependency
@@ -49,6 +55,7 @@ namespace rocksdb {
       }
     }
 
+    // insert write operation
     auto *current = new DirtyVersion(key, value, seq, txn_id);
     auto *header = dirty_array_[position];
     if (header == nullptr) {
@@ -62,11 +69,11 @@ namespace rocksdb {
     return Status::OK();
   }
 
-  Status DirtyBuffer::GetDirty(const Slice &key, std::string *value, DirtyReadBufferContext *context) {
+  Status DirtyBuffer::GetDirty(const string &key, std::string *value, DirtyReadBufferContext *context) {
     int position = GetPosition(key);
     lock_guard<mutex> lock_guard(*GetLock(position));
 
-    // record read operation
+    // insert read operation
     auto *current = new DirtyVersion(key, context->self_txn_id);
     auto *header = dirty_array_[position];
     if (header == nullptr) {
@@ -77,30 +84,31 @@ namespace rocksdb {
       dirty_array_[position] = current;
     }
 
+    // search dirty version in buffer
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
-      if (key.compare(dirty->GetKey()) != 0 || !dirty->is_write) {
+      if (key.compare(dirty->key_) != 0 || !dirty->is_write) {
         dirty = dirty->link_older;
         continue;
       }
       context->found_dirty = true;
       assert(dirty->write_info != nullptr);
-      Slice stored_value = dirty->write_info->GetValue();
+      Slice stored_value = dirty->write_info->value_;
       value->assign(stored_value.data(), stored_value.size());
-      context->seq = dirty->write_info->GetSeq();
-      context->txn_id = dirty->GetTxnId();
+      context->seq = dirty->write_info->seq_;
+      context->txn_id = dirty->txn_id_;
       return Status::OK();
     }
     return Status::NotFound();
   }
 
-  Status DirtyBuffer::Remove(const Slice &key, TransactionID txn_id) {
+  Status DirtyBuffer::Remove(const string &key, TransactionID txn_id) {
     int position = GetPosition(key);
     lock_guard<mutex> lock_guard(*GetLock(position));
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
-      TransactionID stored_txn_id = dirty->GetTxnId();
-      if (stored_txn_id != txn_id || key.compare(dirty->GetKey()) != 0) {
+      TransactionID stored_txn_id = dirty->txn_id_;
+      if (stored_txn_id != txn_id) {
         dirty = dirty->link_older;
         continue;
       }
@@ -134,7 +142,7 @@ namespace rocksdb {
     return Status::OK();
   }
 
-  int DirtyBuffer::GetPosition(const Slice &key) {
+  int DirtyBuffer::GetPosition(const string &key) {
     static murmur_hash hash;
     return static_cast<int>(hash(key) % size_);
   }
@@ -143,13 +151,13 @@ namespace rocksdb {
     return &locks_[pos];
   }
 
-  DirtyVersion::DirtyVersion(const Slice &key, const Slice &value, SequenceNumber seq, TransactionID txn_id)
+  DirtyVersion::DirtyVersion(const string &key, const string &value, SequenceNumber seq, TransactionID txn_id)
       : key_(key), txn_id_(txn_id) {
     is_write = true;
     write_info = new WriteInfo(value, seq);
   }
 
-  DirtyVersion::DirtyVersion(const Slice &key, TransactionID txn_id)
+  DirtyVersion::DirtyVersion(const string &key, TransactionID txn_id)
     : key_(key), txn_id_(txn_id) {
     is_write = false;
     write_info = nullptr;
@@ -159,7 +167,7 @@ namespace rocksdb {
       delete write_info;
   }
 
-  WriteInfo::WriteInfo(const Slice& value, SequenceNumber seq)
+  WriteInfo::WriteInfo(const string &value, SequenceNumber seq)
       : value_(value), seq_(seq) {
   }
 

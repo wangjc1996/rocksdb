@@ -51,11 +51,11 @@ class DirtyBuffer {
 
   ~DirtyBuffer();
 
-  Status Put(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context);
+  Status Put(const string& key, const string& value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context);
 
-  Status GetDirty(const Slice& key, std::string* value, DirtyReadBufferContext* context);
+  Status GetDirty(const string& key, string* value, DirtyReadBufferContext* context);
 
-  Status Remove(const Slice& key, TransactionID txn_id);
+  Status Remove(const string& key, TransactionID txn_id);
 
  private:
   uint32_t column_family_id_;
@@ -64,8 +64,8 @@ class DirtyBuffer {
 
   DirtyVersion **dirty_array_;
 
-  int GetPosition(const Slice &key);
-  mutex* GetLock(const int pos);
+  int GetPosition(const string &key);
+  mutex* GetLock(int pos);
 
   // No copying allowed
   DirtyBuffer(const DirtyBuffer&);
@@ -75,15 +75,11 @@ class DirtyBuffer {
 class DirtyVersion {
  public:
 
-  explicit DirtyVersion(const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id);
+  explicit DirtyVersion(const string &key, const string &value, SequenceNumber seq, TransactionID txn_id);
 
-  explicit DirtyVersion(const Slice& key, TransactionID txn_id);
+  explicit DirtyVersion(const string &key, TransactionID txn_id);
 
   ~DirtyVersion();
-
-  inline Slice GetKey() { return key_; };
-
-  inline TransactionID GetTxnId() { return txn_id_; };
 
  private:
 
@@ -91,7 +87,7 @@ class DirtyVersion {
 
   bool is_write;
 
-  Slice key_;
+  string key_;
   TransactionID txn_id_;
 
   WriteInfo* write_info = nullptr;
@@ -108,19 +104,16 @@ class DirtyVersion {
 class WriteInfo {
 public:
 
-  explicit WriteInfo(const Slice& value, SequenceNumber seq);
+  explicit WriteInfo(const string &value, SequenceNumber seq);
 
   ~WriteInfo();
 
-  inline Slice GetValue() { return value_; };
-
-  inline SequenceNumber GetSeq() { return seq_; };
-
 private:
 
+  friend class DirtyBuffer;
   friend class DirtyVersion;
 
-  Slice value_;
+  string value_;
   SequenceNumber seq_;
 
   // No copying allowed

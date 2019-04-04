@@ -342,7 +342,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
     }
 
     // Second find in dirty buffer
-    s = dbimpl_->GetDirty(column_family, key, buffer_value, &context);
+    s = dbimpl_->GetDirty(column_family, key.ToString(), buffer_value, &context);
     if (s.ok() && context.found_dirty) {
       pinnable_val.PinSelf();
 
@@ -397,7 +397,7 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
     if (is_dirty_read) {
       // put a uncommitted version into dirty buffer & track w-w, anti-dependencies
       DirtyWriteBufferContext context{};
-      s = dbimpl_->WriteDirty(column_family, key, value, seq, GetID(), &context);
+      s = dbimpl_->WriteDirty(column_family, key.ToString(), value.ToString(), seq, GetID(), &context);
 
       // record w-w dependency
       if (context.wrtie_txn_id != 0) {

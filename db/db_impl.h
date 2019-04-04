@@ -792,13 +792,11 @@ class DBImpl : public DB {
   // Actual implementation of Close()
   Status CloseImpl();
 
-  Status WriteDirty(ColumnFamilyHandle* column_family, const Slice& key, const Slice& value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context);
+  Status WriteDirty(ColumnFamilyHandle* column_family, const string& key, const string& value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context);
 
-  Status WriteDirty(ColumnFamilyHandle* column_family, const SliceParts& key, const SliceParts& value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context);
+  Status GetDirty(ColumnFamilyHandle* column_family, const string& key, std::string* value, DirtyReadBufferContext* context);
 
-  Status GetDirty(ColumnFamilyHandle* column_family, const Slice& key, std::string* value, DirtyReadBufferContext* context);
-
-  Status RemoveDirty(uint32_t column_family_id, const Slice& key, TransactionID txn_id);
+  Status RemoveDirty(uint32_t column_family_id, const string& key, TransactionID txn_id);
 
  private:
   friend class DB;

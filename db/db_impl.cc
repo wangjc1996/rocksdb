@@ -1065,7 +1065,7 @@ Status DBImpl::Get(const ReadOptions& read_options,
   return GetImpl(read_options, column_family, key, value);
 }
 
-Status DBImpl::GetDirty(ColumnFamilyHandle *column_family, const Slice &key, std::string *value,
+Status DBImpl::GetDirty(ColumnFamilyHandle *column_family, const string &key, std::string *value,
                           DirtyReadBufferContext *context) {
   uint32_t id = 0;
   if (column_family != nullptr) {

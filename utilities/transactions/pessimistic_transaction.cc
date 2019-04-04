@@ -411,11 +411,12 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
   if (!s.ok()) return s;
 
   PessimisticTransactionCallback callback(this);
-//   s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
-  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
-
-  s = db_impl->WriteWithCallback(
-     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
+  // TODO - no validation phase for now
+   s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+//  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+//
+//  s = db_impl->WriteWithCallback(
+//     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
   return s;
 }
 
@@ -799,7 +800,7 @@ Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int6
   } else if (conflict_piece != UINT_MAX && metadata->current_piece_idx >= conflict_piece) {
     return Status::OK();
   } else if (used_period > 15000000) { // 15000 microseconds
-//    printf("!!!!!!!!!Timeout\n");
+    printf("Alert Timeout\n");
     return Status::TimedOut();
   }
   return Status::Incomplete();
@@ -832,7 +833,7 @@ void PessimisticTransaction::SetTxnType(unsigned int type) {
 }
 
 unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, unsigned int dep_type) {
-  // 0 means no conflict, UINT_MAX means should wait for the entir transaction
+  // 0 means no conflict, UINT_MAX means should wait for the entire transaction
   if (txn_type == 0 && dep_type == 0) {
     switch(piece_idx) {
       case 1: return 0;
@@ -877,7 +878,6 @@ unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, uns
       default: return UINT_MAX;
     }
   }
-//  printf("my_type - %d dep_type - %d piece - %d wrong%d~~~~~~~~~~~~~~~~~~~~~~~~~~\n",txn_type, dep_type, piece_idx, UINT_MAX);
   return UINT_MAX;
 }
 }  // namespace rocksdb
