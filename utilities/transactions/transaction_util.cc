@@ -197,6 +197,9 @@ Status TransactionUtil::CheckKeysForConflicts(PessimisticTransaction* txn,
           if (key_iter.second.dependent_txn == 0) {
             result = Status::Busy();
             break;
+          } else if (key_iter.second.dependent_txn == ULONG_MAX) {
+            // use dirty read interface but do not read anything from dirty buffer, validation is not needed
+            result = Status::OK();
           } else {
             // dirty read validation
             TxnMetaData* metaData = txn_db_impl->GetTxnMetaData(key_iter.second.dependent_txn);

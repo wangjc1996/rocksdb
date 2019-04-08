@@ -357,7 +357,11 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
   }
 
   if (optimistic) {
-    s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */);
+    if (is_dirty_read && s.IsNotFound()) {
+      s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */, ULONG_MAX);
+    } else{
+      s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */);
+    }
   } else {
     s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
   }
@@ -692,14 +696,22 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
   }
   iter->second.exclusive |= exclusive;
 
-  if (dependent_id != 0) {
-    assert(read_only);
-    iter->second.is_dirty_read = true;
-    if (iter->second.dependent_txn != 0 && iter->second.dependent_txn != dependent_id) {
-      // Already dirty read a version written by another txn, assign 0 to it, and abort when validation
-      iter->second.dependent_txn = 0;
+  if (read_only) {
+    if (dependent_id != 0) {
+      assert(read_only);
+      iter->second.is_dirty_read = true;
+      if (iter->second.dependent_txn != 0 && iter->second.dependent_txn != dependent_id) {
+        // Already dirty read a version written by another txn, assign 0 to it, and abort when validation
+        iter->second.dependent_txn = 0;
+      } else {
+        // dependent_id == ULONG_MAX means: use dirty read interface but do not read anything from dirty buffer, no need for future validation
+        // dependent_id != ULONG_MAX means: use dirty read interface and read a dirty written version by transaction with id dependent_id
+        iter->second.dependent_txn = dependent_id;
+      }
     } else {
-      iter->second.dependent_txn = dependent_id;
+      //dependent_id == 0 means it is not a dirty read operation
+      iter->second.is_dirty_read = false;
+      iter->second.dependent_txn = 0;
     }
   }
 }

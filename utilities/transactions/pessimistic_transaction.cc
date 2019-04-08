@@ -412,11 +412,11 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
 
   PessimisticTransactionCallback callback(this);
   // TODO - no validation phase for now
-   s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
-//  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
-//
-//  s = db_impl->WriteWithCallback(
-//     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
+//   s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+
+  s = db_impl->WriteWithCallback(
+     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
   return s;
 }
 
