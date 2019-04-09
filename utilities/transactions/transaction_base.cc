@@ -328,7 +328,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 
   Status s;
 
-  if (is_dirty_read) {
+  if (optimistic && is_dirty_read) {
 
     DirtyReadBufferContext context{};
     context.self_txn_id = GetID();
@@ -373,7 +373,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 }
 
 Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
-                                const Slice& key, const Slice& value, bool optimistic, bool is_dirty_read) {
+                                const Slice& key, const Slice& value, bool optimistic, bool is_public_write) {
   Status s;
 
   if (optimistic) {
@@ -394,7 +394,7 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
       seq = db_->GetLatestSequenceNumber();
     }
 
-    if (is_dirty_read) {
+    if (optimistic && is_public_write) {
       // put a uncommitted version into dirty buffer & track w-w, anti-dependencies
       DirtyWriteBufferContext context{};
       s = dbimpl_->WriteDirty(column_family, key.ToString(), value.ToString(), seq, GetID(), &context);
@@ -692,7 +692,7 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
   }
   iter->second.exclusive |= exclusive;
 
-  if (read_only) {
+  if (optimistic && read_only) {
     if (dependent_id != 0) {
       assert(read_only);
       iter->second.is_dirty_read = true;

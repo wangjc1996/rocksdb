@@ -244,7 +244,7 @@ class TransactionBaseImpl : public Transaction {
   WriteBatch* GetCommitTimeWriteBatch() override;
 
   virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
-               const Slice& value, bool optimistic = false, bool is_dirty_read = true) override;
+               const Slice& value, bool optimistic = false, bool is_public_write = true) override;
 
   virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false) override;
 

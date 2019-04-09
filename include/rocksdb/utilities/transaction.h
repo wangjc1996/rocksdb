@@ -475,7 +475,7 @@ class Transaction {
   uint64_t GetId() { return id_; }
 
   virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
-               const Slice& value, bool optimistic = false, bool is_dirty_read = true) = 0;
+               const Slice& value, bool optimistic = false, bool is_public_write = true) = 0;
 
   Status DoPut(const Slice& key,
                const Slice& value, bool optimistic = false) {
