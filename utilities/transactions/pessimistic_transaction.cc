@@ -100,7 +100,7 @@ PessimisticTransaction::~PessimisticTransaction() {
 }
 
 void PessimisticTransaction::Clear() {
-  txn_db_impl_->UnLock(this, &GetTrackedKeys());
+//  txn_db_impl_->UnLock(this, &GetTrackedKeys());
   TransactionBaseImpl::Clear();
 }
 
@@ -226,7 +226,6 @@ Status PessimisticTransaction::CommitBatch(WriteBatch* batch) {
     s = CommitBatchInternal(batch);
     if (s.ok()) {
       txn_state_.store(COMMITED);
-      metaData->state.store(S_COMMITED);
     }
   } else if (txn_state_ == LOCKS_STOLEN) {
     s = Status::Expired();
@@ -354,16 +353,21 @@ Status PessimisticTransaction::Commit() {
       if (!name_.empty()) {
         txn_db_impl_->UnregisterTransaction(this);
       }
+
+      // Release order: 1. lock 2. dirty buffer 3. Clear txn meta info 4. mark as commit or abort
+      // remember stage 3 Clear() should be right before mark "commit" or the commit_seq can not be recorded correctly
+      txn_db_impl_->UnLock(this, &GetTrackedKeys());
       ReleaseDirty();
       if (s.ok()) {
         txn_state_.store(COMMITED);
-        metaData->state.store(S_COMMITED);
         metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch()) +
                                WriteBatchInternal::Count(GetWriteBatch()->GetWriteBatch()) - 1;
+        Clear();
+        metaData->state.store(S_COMMITED);
       } else {
+        Clear();
         metaData->state.store(S_ABORT);
       }
-      Clear();
     }
   } else if (commit_prepared) {
     txn_state_.store(AWAITING_COMMIT);
@@ -385,8 +389,6 @@ Status PessimisticTransaction::Commit() {
     txn_db_impl_->UnregisterTransaction(this);
 
     txn_state_.store(COMMITED);
-    metaData->state.store(S_COMMITED);
-    metaData->commit_seq = WriteBatchInternal::Sequence(GetWriteBatch()->GetWriteBatch());
     Clear();
   } else if (txn_state_ == LOCKS_STOLEN) {
     s = Status::Expired();
@@ -456,10 +458,8 @@ Status PessimisticTransaction::Rollback() {
       assert(log_number_ > 0);
       dbimpl_->logs_with_prep_tracker()->MarkLogAsHavingPrepSectionFlushed(
           log_number_);
-      ReleaseDirty();
       Clear();
       txn_state_.store(ROLLEDBACK);
-      metaData->state.store(S_ABORT);
     }
   } else if (txn_state_ == STARTED) {
 
@@ -478,6 +478,7 @@ Status PessimisticTransaction::Rollback() {
       }
     }
     // prepare couldn't have taken place
+    txn_db_impl_->UnLock(this, &GetTrackedKeys());
     ReleaseDirty();
     Clear();
     txn_state_.store(ROLLEDBACK);
@@ -713,7 +714,8 @@ Status PessimisticTransaction::DoLockAll() {
       const auto& key = key_iter.first;
       const uint8_t key_state = key_iter.second.key_state;
       if (((key_state & 2) != 0) && ((key_state & 4) == 0))
-                s = DoPessimisticLock(cf, key, false, true, false);
+        // in occ write set
+        s = DoPessimisticLock(cf, key, false /* read_only */, true /* exclusive */, false /* fail_fast */);
       if (!s.ok()) return s;
     }
     // cfs.push_back(cf);
@@ -799,7 +801,7 @@ Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int6
     return Status::Aborted();
   } else if (conflict_piece != UINT_MAX && metadata->current_piece_idx >= conflict_piece) {
     return Status::OK();
-  } else if (used_period > 15000000) { // 15000 microseconds
+  } else if (used_period > 15000000) { // 15000000 microseconds
     printf("Alert Timeout\n");
     return Status::TimedOut();
   }
