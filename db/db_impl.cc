@@ -1073,7 +1073,7 @@ Status DBImpl::GetDirty(ColumnFamilyHandle *column_family, const string &key, st
   }
   auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(id);
   auto* dirty_buffer = cfd->dirty_buffer();
-  return dirty_buffer->GetDirty(key, value, context);
+  return dirty_buffer->Get(key, value, context);
 }
 
 Status DBImpl::GetImpl(const ReadOptions& read_options,

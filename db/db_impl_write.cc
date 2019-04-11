@@ -1499,7 +1499,7 @@ Status DB::Merge(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   return Write(opt, &batch);
 }
 
-Status DBImpl::WriteDirty(ColumnFamilyHandle* column_family, const string& key, const string& value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
+Status DBImpl::WriteDirtyPut(ColumnFamilyHandle* column_family, const string& key, const string& value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
   uint32_t id = 0;
   if (column_family != nullptr) {
     id = column_family->GetID();
@@ -1507,6 +1507,16 @@ Status DBImpl::WriteDirty(ColumnFamilyHandle* column_family, const string& key, 
   auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(id);
   auto* dirty_buffer = cfd->dirty_buffer();
   return dirty_buffer->Put(key, value, seq, txn_id, context);
+}
+
+Status DBImpl::WriteDirtyDelete(ColumnFamilyHandle* column_family, const string& key, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
+  uint32_t id = 0;
+  if (column_family != nullptr) {
+    id = column_family->GetID();
+  }
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(id);
+  auto* dirty_buffer = cfd->dirty_buffer();
+  return dirty_buffer->Delete(key, seq, txn_id, context);
 }
 
 Status DBImpl::RemoveDirty(uint32_t column_family_id, const string& key, TransactionID txn_id) {

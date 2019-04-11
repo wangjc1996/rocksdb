@@ -489,7 +489,7 @@ class Transaction {
     return DoGet(options, nullptr, key, value, optimistic);
   }
 
-  virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false) = 0; 
+  virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false, bool is_public_write = true) = 0;
 
   Status DoDelete(const Slice& key, bool optimistic = false) {
 	return DoDelete(nullptr, key, optimistic);

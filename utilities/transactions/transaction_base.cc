@@ -344,7 +344,6 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
     // Second find in dirty buffer
     s = dbimpl_->GetDirty(column_family, key.ToString(), buffer_value, &context);
     if (s.ok() && context.found_dirty) {
-      pinnable_val.PinSelf();
 
       // record r-w dependency
       if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), context.txn_id) == depend_txn_ids_.end()) {
@@ -352,7 +351,18 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
       }
 
       s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */,context.txn_id);
-      return s;
+
+      if (!s.ok()) {
+        assert(false);
+        return s;
+      }
+
+      if (context.deletion) {
+        return Status::NotFound();
+      } else {
+        pinnable_val.PinSelf();
+        return Status::OK();
+      }
     }
   }
 
@@ -379,6 +389,7 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
   if (optimistic) {
     s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
   } else {
+    // fail_fast is meaningless, will not be used anyway -> transaction_lock_mgr.cc:AcquireWithTimeout
     s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
   }
 
@@ -397,7 +408,7 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
     if (optimistic && is_public_write) {
       // put a uncommitted version into dirty buffer & track w-w, anti-dependencies
       DirtyWriteBufferContext context{};
-      s = dbimpl_->WriteDirty(column_family, key.ToString(), value.ToString(), seq, GetID(), &context);
+      s = dbimpl_->WriteDirtyPut(column_family, key.ToString(), value.ToString(), seq, GetID(), &context);
 
       // record w-w dependency
       if (context.wrtie_txn_id != 0) {
@@ -417,12 +428,13 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
   return s;
 }
 
-Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic) {
+Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic, bool is_public_write) {
   Status s;
 
   if (optimistic) {
     s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
   } else {
+    // fail_fast is meaningless, will not be used anyway -> transaction_lock_mgr.cc:AcquireWithTimeout
     s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
   }
 
@@ -430,6 +442,31 @@ Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Sl
     s = GetBatchForWrite()->Delete(column_family, key);
     if (s.ok()) {
       num_deletes_++;
+    }
+    SequenceNumber seq;
+    if (snapshot_) {
+      seq = snapshot_->GetSequenceNumber();
+    } else {
+      seq = db_->GetLatestSequenceNumber();
+    }
+
+    if (optimistic && is_public_write) {
+      // put a uncommitted version into dirty buffer & track w-w, anti-dependencies
+      DirtyWriteBufferContext context{};
+      s = dbimpl_->WriteDirtyDelete(column_family, key.ToString(), seq, GetID(), &context);
+
+      // record w-w dependency
+      if (context.wrtie_txn_id != 0) {
+        if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), context.wrtie_txn_id) == depend_txn_ids_.end()) {
+          depend_txn_ids_.emplace_back(context.wrtie_txn_id);
+        }
+      }
+      // record anti-dependency
+      for (auto read_txn_id : context.read_txn_ids) {
+        if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), read_txn_id) == depend_txn_ids_.end()) {
+          depend_txn_ids_.emplace_back(read_txn_id);
+        }
+      }
     }
   }
 

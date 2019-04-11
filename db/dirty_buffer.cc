@@ -69,7 +69,45 @@ namespace rocksdb {
     return Status::OK();
   }
 
-  Status DirtyBuffer::GetDirty(const string &key, std::string *value, DirtyReadBufferContext *context) {
+  Status DirtyBuffer::Delete(const string &key, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
+    int position = GetPosition(key);
+    lock_guard<mutex> lock_guard(*GetLock(position));
+
+    //get dependency ids
+    auto *dirty = dirty_array_[position];
+    while (dirty != nullptr) {
+      if (key.compare(dirty->key_) != 0 || dirty->txn_id_ == txn_id) {
+        dirty = dirty->link_older;
+        continue;
+      }
+
+      if (dirty->is_write) {
+        // w-w dependency
+        context->wrtie_txn_id = dirty->txn_id_;
+        break;
+      } else {
+        // anti-dependency
+        context->read_txn_ids.emplace_back(dirty->txn_id_);
+        dirty = dirty->link_older;
+        continue;
+      }
+    }
+
+    // insert delete operation
+    auto *current = new DirtyVersion(key, seq, txn_id);
+    auto *header = dirty_array_[position];
+    if (header == nullptr) {
+      dirty_array_[position] = current;
+    } else {
+      current->link_older = header;
+      header->link_newer = current;
+      dirty_array_[position] = current;
+    }
+
+    return Status::OK();
+  }
+
+  Status DirtyBuffer::Get(const string &key, std::string *value, DirtyReadBufferContext *context) {
     int position = GetPosition(key);
     lock_guard<mutex> lock_guard(*GetLock(position));
 
@@ -91,12 +129,21 @@ namespace rocksdb {
         dirty = dirty->link_older;
         continue;
       }
-      context->found_dirty = true;
-      assert(dirty->write_info != nullptr);
-      Slice stored_value = dirty->write_info->value_;
-      value->assign(stored_value.data(), stored_value.size());
-      context->seq = dirty->write_info->seq_;
-      context->txn_id = dirty->txn_id_;
+      if (dirty->write_info->deletion_) {
+        context->found_dirty = true;
+        assert(dirty->write_info != nullptr && dirty->write_info->deletion_);
+        context->deletion = true;
+        context->seq = dirty->write_info->seq_;
+        context->txn_id = dirty->txn_id_;
+      } else {
+        context->found_dirty = true;
+        assert(dirty->write_info != nullptr);
+        Slice stored_value = dirty->write_info->value_;
+        value->assign(stored_value.data(), stored_value.size());
+        context->deletion = false;
+        context->seq = dirty->write_info->seq_;
+        context->txn_id = dirty->txn_id_;
+      }
       return Status::OK();
     }
     return Status::NotFound();
@@ -151,12 +198,21 @@ namespace rocksdb {
     return &locks_[pos];
   }
 
+  // normal write operation
   DirtyVersion::DirtyVersion(const string &key, const string &value, SequenceNumber seq, TransactionID txn_id)
       : key_(key), txn_id_(txn_id) {
     is_write = true;
     write_info = new WriteInfo(value, seq);
   }
 
+  // delete operation
+  DirtyVersion::DirtyVersion(const string &key, SequenceNumber seq, TransactionID txn_id)
+      : key_(key), txn_id_(txn_id) {
+    is_write = true;
+    write_info = new WriteInfo(seq);
+  }
+
+  // normal read operation
   DirtyVersion::DirtyVersion(const string &key, TransactionID txn_id)
     : key_(key), txn_id_(txn_id) {
     is_write = false;
@@ -167,8 +223,14 @@ namespace rocksdb {
       delete write_info;
   }
 
+  // normal write operation
   WriteInfo::WriteInfo(const string &value, SequenceNumber seq)
-      : value_(value), seq_(seq) {
+      : value_(value), seq_(seq), deletion_(false) {
+  }
+
+  // delete operation
+  WriteInfo::WriteInfo(SequenceNumber seq)
+      : seq_(seq), deletion_(true) {
   }
 
   WriteInfo::~WriteInfo() {

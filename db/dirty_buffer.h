@@ -35,6 +35,8 @@ struct DirtyReadBufferContext {
   TransactionID txn_id = 0;
   // txn operating the dirty read
   TransactionID self_txn_id = 0;
+  // whether found a deletion
+  bool deletion = false;
 };
 
 struct DirtyWriteBufferContext {
@@ -53,7 +55,9 @@ class DirtyBuffer {
 
   Status Put(const string& key, const string& value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context);
 
-  Status GetDirty(const string& key, string* value, DirtyReadBufferContext* context);
+  Status Delete(const string& key, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context);
+
+  Status Get(const string& key, string* value, DirtyReadBufferContext* context);
 
   Status Remove(const string& key, TransactionID txn_id);
 
@@ -75,8 +79,13 @@ class DirtyBuffer {
 class DirtyVersion {
  public:
 
+  // normal write operation
   explicit DirtyVersion(const string &key, const string &value, SequenceNumber seq, TransactionID txn_id);
 
+  // delete operation
+  explicit DirtyVersion(const string &key, SequenceNumber seq, TransactionID txn_id);
+
+  // normal read operation
   explicit DirtyVersion(const string &key, TransactionID txn_id);
 
   ~DirtyVersion();
@@ -104,7 +113,11 @@ class DirtyVersion {
 class WriteInfo {
 public:
 
+  // normal write operation
   explicit WriteInfo(const string &value, SequenceNumber seq);
+
+  // delete operation
+  explicit WriteInfo(SequenceNumber seq);
 
   ~WriteInfo();
 
@@ -115,6 +128,7 @@ private:
 
   string value_;
   SequenceNumber seq_;
+  bool deletion_;
 
   // No copying allowed
   WriteInfo(const WriteInfo&);
