@@ -8,6 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/dirty_buffer.h"
+#include "rocksdb/comparator.h"
 
 using std::lock_guard;
 
@@ -19,6 +20,7 @@ namespace rocksdb {
         locks_(size),
         size_(size) {
     dirty_array_ = new DirtyVersion *[size]();
+    scan_list.reserve(10);
   }
 
   DirtyBuffer::~DirtyBuffer() {
@@ -27,15 +29,27 @@ namespace rocksdb {
       // make sure buffer is clean
       if (dirty != nullptr) assert(false);
     }
+    assert(scan_list.empty());
 
     delete[] dirty_array_;
   }
 
   Status DirtyBuffer::Put(const string &key, const string &value, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
+
+    // not exclusive on the whole buffer
+    ReadLock rl(&buffer_mutex);
+
     int position = GetPosition(key);
     lock_guard<mutex> lock_guard(*GetLock(position));
 
-    //get dependency ids
+    // scan dependency ids
+    {
+      ::lock_guard<mutex> scan_list_guard(scan_list_mutex);
+      for (auto id : scan_list) {
+        if (id != txn_id) context->read_txn_ids.emplace_back(id);
+      }
+    }
+    //get other dependency ids
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
       if (key.compare(dirty->key_) != 0 || dirty->txn_id_ == txn_id) {
@@ -70,10 +84,21 @@ namespace rocksdb {
   }
 
   Status DirtyBuffer::Delete(const string &key, SequenceNumber seq, TransactionID txn_id, DirtyWriteBufferContext *context) {
+
+    // not exclusive on the whole buffer
+    ReadLock rl(&buffer_mutex);
+
     int position = GetPosition(key);
     lock_guard<mutex> lock_guard(*GetLock(position));
 
-    //get dependency ids
+    // scan dependency ids
+    {
+      ::lock_guard<mutex> scan_list_guard(scan_list_mutex);
+      for (auto id : scan_list) {
+        if (id != txn_id) context->read_txn_ids.emplace_back(id);
+      }
+    }
+    //get other dependency ids
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
       if (key.compare(dirty->key_) != 0 || dirty->txn_id_ == txn_id) {
@@ -108,6 +133,10 @@ namespace rocksdb {
   }
 
   Status DirtyBuffer::Get(const string &key, std::string *value, DirtyReadBufferContext *context) {
+
+    // not exclusive on the whole buffer
+    ReadLock rl(&buffer_mutex);
+
     int position = GetPosition(key);
     lock_guard<mutex> lock_guard(*GetLock(position));
 
@@ -149,7 +178,66 @@ namespace rocksdb {
     return Status::NotFound();
   }
 
+  Status DirtyBuffer::Scan(const ReadOptions& read_options, DirtyBufferScanCallback* callback, DirtyScanBufferContext* context) {
+
+    // scan operation is exclusive
+    WriteLock wl(&buffer_mutex);
+
+    {
+      // add range query operation to the access list
+      assert(context->self_txn_id > 0 && context->self_txn_id != ULONG_MAX);
+      lock_guard<mutex> scan_list_guard(scan_list_mutex);
+      if(std::find(scan_list.begin(), scan_list.end(), context->self_txn_id) == scan_list.end()) {
+        scan_list.emplace_back(context->self_txn_id);
+      }
+    }
+
+    const Comparator *comparator = BytewiseComparator();
+
+    for (int position = 0; position < size_; ++position) {
+      // search dirty version in buffer
+      auto *dirty = dirty_array_[position];
+      while (dirty != nullptr) {
+        if (!dirty->is_write) {
+          dirty = dirty->link_older;
+          continue;
+        }
+
+        Slice target(dirty->key_);
+        if (comparator->Compare(target, *read_options.iterate_lower_bound) < 0
+            || comparator->Compare(target, *read_options.iterate_upper_bound) >= 0) {
+          dirty = dirty->link_older;
+          continue;
+        }
+
+        // found a valid entry
+        if (dirty->write_info->deletion_) {
+          callback->InvokeDeletion(dirty->key_);
+        } else {
+          callback->Invoke(dirty->key_, dirty->write_info->value_);
+        }
+        // track dependency
+        if (dirty->txn_id_ == context->self_txn_id) {
+          // this kind of value should be seen, but should not be added to dependency list
+          printf("Find a dirty version which is inserted by the transaction itself\n");
+        } else {
+          if(std::find(context->txn_ids.begin(), context->txn_ids.end(), dirty->txn_id_) == context->txn_ids.end()) {
+            context->txn_ids.emplace_back(dirty->txn_id_);
+          }
+        }
+
+        dirty = dirty->link_older;
+
+      }
+    }
+    return Status::OK();
+  }
+
   Status DirtyBuffer::Remove(const string &key, TransactionID txn_id) {
+
+    // not exclusive on the whole buffer
+    ReadLock rl(&buffer_mutex);
+
     int position = GetPosition(key);
     lock_guard<mutex> lock_guard(*GetLock(position));
     auto *dirty = dirty_array_[position];
@@ -185,6 +273,18 @@ namespace rocksdb {
       DirtyVersion *temp = dirty->link_older;
       delete dirty;
       dirty = temp;
+    }
+    return Status::OK();
+  }
+
+  Status DirtyBuffer::RemoveScanInfo(TransactionID txn_id) {
+    {
+      assert(txn_id > 0 && txn_id != ULONG_MAX);
+      lock_guard<mutex> scan_list_guard(scan_list_mutex);
+      auto it = std::find(scan_list.begin(), scan_list.end(), txn_id);
+      if(it != scan_list.end()) {
+        scan_list.erase(it);
+      }
     }
     return Status::OK();
   }

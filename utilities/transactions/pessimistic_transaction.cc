@@ -812,10 +812,18 @@ Status PessimisticTransaction::ReleaseDirty() {
   // get write set
   const TransactionKeyMap& key_map = GetTrackedKeys();
 
+  Status s;
+
+  // release scan info
+  for (auto cfd : scan_column_family_ids) {
+    s = dbimpl_->RemoveScanDirty(cfd, GetID());
+    if (!s.ok()) return s;
+  }
+
+  // release read & write info
   for (auto& key_map_iter : key_map) {
     uint32_t cf = key_map_iter.first;
 
-    Status s;
     const auto& keys = key_map_iter.second;
     for (auto& key_iter : keys) {
       const auto& key = key_iter.first;

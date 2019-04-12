@@ -13,6 +13,7 @@
 #include "rocksdb/comparator.h"
 #include "rocksdb/db.h"
 #include "rocksdb/status.h"
+#include "rocksdb/utilities/dirty_buffer_scan.h"
 
 namespace rocksdb {
 
@@ -488,6 +489,8 @@ class Transaction {
                      std::string* value, bool optimistic = false) {
     return DoGet(options, nullptr, key, value, optimistic);
   }
+
+  virtual Status DoScanDirty(const ReadOptions& options, ColumnFamilyHandle* column_family, DirtyBufferScanCallback* callback) = 0;
 
   virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false, bool is_public_write = true) = 0;
 

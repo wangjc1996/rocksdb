@@ -250,6 +250,8 @@ class TransactionBaseImpl : public Transaction {
 
   virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, bool is_dirty_read = true) override;
 
+  virtual Status DoScanDirty(const ReadOptions& options, ColumnFamilyHandle* column_family, DirtyBufferScanCallback* callback) override;
+
   protected:
   void DoTrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive, bool optimistic = false, TransactionID dependent_id = 0);
 
@@ -305,6 +307,9 @@ class TransactionBaseImpl : public Transaction {
 
   // dirty read dependencies
   std::vector<TransactionID> depend_txn_ids_;
+
+  // column_family_ids where this transaction have range queried on
+  std::vector<uint32_t> scan_column_family_ids;
 
   struct SavePoint {
     std::shared_ptr<const Snapshot> snapshot_;

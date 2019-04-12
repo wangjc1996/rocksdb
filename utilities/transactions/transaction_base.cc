@@ -31,6 +31,7 @@ TransactionBaseImpl::TransactionBaseImpl(DB* db,
     WriteBatchInternal::InsertNoop(write_batch_.GetWriteBatch());
   }
   depend_txn_ids_.reserve(8);
+  scan_column_family_ids.reserve(4);
 }
 
 TransactionBaseImpl::~TransactionBaseImpl() {
@@ -382,6 +383,36 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
   return s;
 }
 
+Status TransactionBaseImpl::DoScanDirty(const ReadOptions &options, ColumnFamilyHandle *column_family,
+                                        DirtyBufferScanCallback *callback) {
+  Status s;
+
+  // record the column family id
+  uint32_t cfd = 0;
+  if (column_family != nullptr) {
+    cfd = column_family->GetID();
+  }
+  if(std::find(scan_column_family_ids.begin(), scan_column_family_ids.end(), cfd) == scan_column_family_ids.end()) {
+    scan_column_family_ids.emplace_back(cfd);
+  }
+
+  // scan in dirty buffer
+  DirtyScanBufferContext context{};
+  context.self_txn_id = GetID();
+  s = dbimpl_->ScanDirty(column_family, options, callback, &context);
+
+  if (s.ok()) {
+    // record dependencies
+    for (auto txn_id : context.txn_ids) {
+      if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), txn_id) == depend_txn_ids_.end()) {
+        depend_txn_ids_.emplace_back(txn_id);
+      }
+    }
+  }
+
+  return s;
+}
+
 Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
                                 const Slice& key, const Slice& value, bool optimistic, bool is_public_write) {
   Status s;
@@ -416,7 +447,7 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
           depend_txn_ids_.emplace_back(context.wrtie_txn_id);
         }
       }
-      // record anti-dependency
+      // record anti-dependency & scan-dep ids
       for (auto read_txn_id : context.read_txn_ids) {
         if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), read_txn_id) == depend_txn_ids_.end()) {
           depend_txn_ids_.emplace_back(read_txn_id);
@@ -461,7 +492,7 @@ Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Sl
           depend_txn_ids_.emplace_back(context.wrtie_txn_id);
         }
       }
-      // record anti-dependency
+      // record anti-dependency & scan-dep ids
       for (auto read_txn_id : context.read_txn_ids) {
         if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), read_txn_id) == depend_txn_ids_.end()) {
           depend_txn_ids_.emplace_back(read_txn_id);

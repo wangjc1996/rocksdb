@@ -15,10 +15,13 @@
 #include <mutex>
 
 #include "db/dbformat.h"
+#include "port/port_posix.h"
 #include "util/murmurhash.h"
+#include "rocksdb/utilities/dirty_buffer_scan.h"
 
 namespace rocksdb {
 
+class RWMutex;
 class DirtyVersion;
 class WriteInfo;
 
@@ -27,6 +30,12 @@ using TransactionID = uint64_t;
 
 using std::string;
 using std::mutex;
+
+struct DirtyScanBufferContext {
+  TransactionID self_txn_id = 0;
+  // dependency ids
+  std::vector<TransactionID> txn_ids;
+};
 
 struct DirtyReadBufferContext {
   bool found_dirty = false;
@@ -42,7 +51,7 @@ struct DirtyReadBufferContext {
 struct DirtyWriteBufferContext {
     // w-w dependency id
     TransactionID wrtie_txn_id = 0;
-    // anti-dependency ids
+    // anti-dependency ids & scan-dependency ids
     std::vector<TransactionID> read_txn_ids;
 };
 
@@ -59,7 +68,11 @@ class DirtyBuffer {
 
   Status Get(const string& key, string* value, DirtyReadBufferContext* context);
 
+  Status Scan(const ReadOptions& read_options, DirtyBufferScanCallback* callback, DirtyScanBufferContext* context);
+
   Status Remove(const string& key, TransactionID txn_id);
+
+  Status RemoveScanInfo(TransactionID txn_id);
 
  private:
   uint32_t column_family_id_;
@@ -67,6 +80,14 @@ class DirtyBuffer {
   int size_;
 
   DirtyVersion **dirty_array_;
+
+  // scan operations are exclusive, inserts are not
+  port::RWMutex buffer_mutex;
+
+  // protect the read write of the scan_list
+  mutex scan_list_mutex;
+  // record the txn ids which have perform the dirty buffer scan
+  std::vector<TransactionID> scan_list;
 
   int GetPosition(const string &key);
   mutex* GetLock(int pos);
