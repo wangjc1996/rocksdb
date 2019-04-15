@@ -847,12 +847,12 @@ unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, uns
   if (txn_type == 0 && dep_type == 0) {
     switch(piece_idx) {
       case 1: return 0;
-      case 2: return 0;
-      case 3: return 3;
-      case 4: return 0;
+      case 2: return 2;
+      case 3: return 0;
+      case 4: return 4;
       case 5: return 5;
-      case 6: return 0;
-      case 7: return 0;
+      case 6: return 6;
+      case 7: return 7;
       case 8: return 0;
       default: return UINT_MAX;
     }
@@ -861,12 +861,25 @@ unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, uns
     switch(piece_idx) {
       case 1: return 1;
       case 2: return 2;
-      case 3: return 3;
-      case 4: return 0;
+      case 3: return 0;
+      case 4: return UINT_MAX;
       case 5: return UINT_MAX;
-      case 6: return 0;
-      case 7: return 0;
-      case 8: return 0;
+      case 6: return UINT_MAX;
+      case 7: return UINT_MAX;
+      case 8: return 3;
+      default: return UINT_MAX;
+    }
+  }
+  if (txn_type == 0 && dep_type == 2) {
+    switch(piece_idx) {
+      case 1: return UINT_MAX;
+      case 2: return UINT_MAX;
+      case 3: return UINT_MAX;
+      case 4: return UINT_MAX;
+      case 5: return 1;
+      case 6: return 2;
+      case 7: return 3;
+      case 8: return 4;
       default: return UINT_MAX;
     }
   }
@@ -874,7 +887,7 @@ unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, uns
     switch(piece_idx) {
       case 1: return 1;
       case 2: return 2;
-      case 3: return 3;
+      case 3: return 8;
       case 4: return 0;
       default: return UINT_MAX;
     }
@@ -885,6 +898,42 @@ unsigned int GetConflictPiece(unsigned int txn_type, unsigned int piece_idx, uns
       case 2: return 2;
       case 3: return 3;
       case 4: return 0;
+      default: return UINT_MAX;
+    }
+  }
+  if (txn_type == 1 && dep_type == 2) {
+    switch(piece_idx) {
+      case 1: return UINT_MAX;
+      case 2: return UINT_MAX;
+      case 3: return 4;
+      case 4: return 0;
+      default: return UINT_MAX;
+    }
+  }
+  if (txn_type == 2 && dep_type == 0) {
+    switch(piece_idx) {
+      case 1: return 5;
+      case 2: return 6;
+      case 3: return 7;
+      case 4: return 8;
+      default: return UINT_MAX;
+    }
+  }
+  if (txn_type == 2 && dep_type == 1) {
+    switch(piece_idx) {
+      case 1: return UINT_MAX;
+      case 2: return UINT_MAX;
+      case 3: return UINT_MAX;
+      case 4: return 3;
+      default: return UINT_MAX;
+    }
+  }
+  if (txn_type == 2 && dep_type == 2) {
+    switch(piece_idx) {
+      case 1: return 1;
+      case 2: return 2;
+      case 3: return 3;
+      case 4: return 4;
       default: return UINT_MAX;
     }
   }
