@@ -20,7 +20,7 @@ namespace rocksdb {
         locks_(size),
         size_(size) {
     dirty_array_ = new DirtyVersion *[size]();
-    scan_list.reserve(10);
+    scan_list.reserve(64);
   }
 
   DirtyBuffer::~DirtyBuffer() {
@@ -45,8 +45,10 @@ namespace rocksdb {
     // scan dependency ids
     {
       ::lock_guard<mutex> scan_list_guard(scan_list_mutex);
-      for (auto id : scan_list) {
-        if (id != txn_id) context->read_txn_ids.emplace_back(id);
+      for (auto it = scan_list.begin(); it != scan_list.end(); ++it) {
+        // most recent scan id is at the end of the vector
+        if (*it != txn_id) context->read_txn_ids.emplace_back(*it);
+        else break;
       }
     }
     //get other dependency ids
@@ -94,8 +96,10 @@ namespace rocksdb {
     // scan dependency ids
     {
       ::lock_guard<mutex> scan_list_guard(scan_list_mutex);
-      for (auto id : scan_list) {
-        if (id != txn_id) context->read_txn_ids.emplace_back(id);
+      for (auto it = scan_list.begin(); it != scan_list.end(); ++it) {
+        // most recent scan id is at the end of the vector
+        if (*it != txn_id) context->read_txn_ids.emplace_back(*it);
+        else break;
       }
     }
     //get other dependency ids
