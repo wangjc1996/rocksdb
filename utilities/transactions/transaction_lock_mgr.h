@@ -14,6 +14,7 @@
 
 #include "monitoring/instrumented_mutex.h"
 #include "rocksdb/utilities/transaction.h"
+#include "rocksdb/utilities/transaction_db_mutex.h"
 #include "util/autovector.h"
 #include "util/hash_map.h"
 #include "util/thread_local.h"
@@ -141,7 +142,7 @@ class TransactionLockMgr {
 
   Status GetLockStatus(LockMapStripe* stripe, const std::string& key, Env* env, int64_t timeout, const LockInfo& lock_info);
 
-  void UnLockKey(const PessimisticTransaction* txn, const std::string& key,
+  std::shared_ptr<TransactionDBCondVar> UnLockKey(const PessimisticTransaction* txn, const std::string& key,
                  LockMapStripe* stripe, LockMap* lock_map, Env* env);
 
   bool IncrementWaiters(const PessimisticTransaction* txn,

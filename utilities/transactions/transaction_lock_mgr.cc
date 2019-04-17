@@ -22,7 +22,6 @@
 
 #include "monitoring/perf_context_imp.h"
 #include "rocksdb/slice.h"
-#include "rocksdb/utilities/transaction_db_mutex.h"
 #include "util/cast_util.h"
 #include "util/murmurhash.h"
 #include "util/sync_point.h"
@@ -38,6 +37,8 @@ struct LockInfo {
   // Transaction locks are not valid after this time in us
   uint64_t expiration_time;
 
+  bool done = false;
+
   LockInfo(TransactionID id, uint64_t time, bool ex)
       : exclusive(ex), expiration_time(time) {
     txn_ids.push_back(id);
@@ -48,23 +49,28 @@ struct LockInfo {
         expiration_time(lock_info.expiration_time) {}
 };
 
+typedef std::pair<std::shared_ptr<TransactionDBCondVar>, LockInfo> LockVarInfo;
+
 struct LockMapStripe {
-  explicit LockMapStripe(std::shared_ptr<TransactionDBMutexFactory> factory) {
+  explicit LockMapStripe(std::shared_ptr<TransactionDBMutexFactory> factory) 
+        : factory_(factory) {
     stripe_mutex = factory->AllocateMutex();
-    stripe_cv = factory->AllocateCondVar();
+    //stripe_cv = factory->AllocateCondVar();
     assert(stripe_mutex);
-    assert(stripe_cv);
+    //assert(stripe_cv);
   }
+
+  std::shared_ptr<TransactionDBMutexFactory> factory_;
 
   // Mutex must be held before modifying keys map
   std::shared_ptr<TransactionDBMutex> stripe_mutex;
 
   // Condition Variable per stripe for waiting on a lock
-  std::shared_ptr<TransactionDBCondVar> stripe_cv;
+  //std::shared_ptr<TransactionDBCondVar> stripe_cv;
 
   // Locked keys mapped to the info about the transactions that locked them.
   // TODO(agiardullo): Explore performance of other data structures.
-  std::unordered_map<std::string, LockInfo> keys;
+  std::unordered_map<std::string, LockVarInfo> keys;
 };
 
 // Map of #num_stripes LockMapStripes
@@ -421,14 +427,16 @@ Status TransactionLockMgr::AcquireWithTimeout(
       }
 
       TEST_SYNC_POINT("TransactionLockMgr::AcquireWithTimeout:WaitingTxn");
+      auto stripe_iter = stripe->keys.find(key);
+      assert(stripe_iter != stripe->keys.end());
       if (cv_end_time < 0) {
         // Wait indefinitely
-        result = stripe->stripe_cv->Wait(stripe->stripe_mutex);
+        result = stripe_iter->second.first->Wait(stripe->stripe_mutex);
       } else {
         uint64_t now = env->NowMicros();
         if (static_cast<uint64_t>(cv_end_time) > now) {
-          result = stripe->stripe_cv->WaitFor(stripe->stripe_mutex,
-                                              cv_end_time - now);
+          result = stripe_iter->second.first->WaitFor(
+              stripe->stripe_mutex, cv_end_time - now);
         }
       }
 
@@ -574,9 +582,9 @@ Status TransactionLockMgr::AcquireLocked(LockMap* lock_map,
   Status result;
   // Check if this key is already locked
   auto stripe_iter = stripe->keys.find(key);
-  if (stripe_iter != stripe->keys.end()) {
+  if (stripe_iter != stripe->keys.end() && !stripe_iter->second.second.done) {
     // Lock already held
-    LockInfo& lock_info = stripe_iter->second;
+    LockInfo& lock_info = stripe_iter->second.second;
     assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
 
     if (lock_info.exclusive || txn_lock_info.exclusive) {
@@ -611,17 +619,22 @@ Status TransactionLockMgr::AcquireLocked(LockMap* lock_map,
       lock_info.expiration_time =
           std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
     }
-  } else {  // Lock not held.
+  } else if (stripe_iter != stripe->keys.end()) {
+    // Lock not held, but conditionvariable already created
+    assert(max_num_locks_ < 0);
+    stripe_iter->second.second = txn_lock_info;
+  }else {  // Lock not held.
     // Check lock limit
     if (max_num_locks_ > 0 &&
         lock_map->lock_cnt.load(std::memory_order_acquire) >= max_num_locks_) {
       result = Status::Busy(Status::SubCode::kLockLimit);
     } else {
       // acquire lock
-      stripe->keys.insert({key, txn_lock_info});
+      stripe->keys.insert({key, 
+              {stripe->factory_->AllocateCondVar(), txn_lock_info}});
 
       // Maintain lock count if there is a limit on the number of locks
-      if (max_num_locks_) {
+      if (max_num_locks_ > 0) {
         lock_map->lock_cnt++;
       }
     }
@@ -655,9 +668,9 @@ Status TransactionLockMgr::GetLockStatus(LockMapStripe* stripe,
 
   // Check if this key is already locked
   auto stripe_iter = stripe->keys.find(key);
-  if (stripe_iter != stripe->keys.end()) {
+  if (stripe_iter != stripe->keys.end() && !stripe_iter->second.second.done) {
     // Lock already held
-    LockInfo& lock_info = stripe_iter->second;
+    LockInfo& lock_info = stripe_iter->second.second;
     assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
     assert(txn_lock_info.exclusive);
 
@@ -686,23 +699,27 @@ Status TransactionLockMgr::GetLockStatus(LockMapStripe* stripe,
   return result;
 }
 
-void TransactionLockMgr::UnLockKey(const PessimisticTransaction* txn,
-                                   const std::string& key,
-                                   LockMapStripe* stripe, LockMap* lock_map,
-                                   Env* env) {
+std::shared_ptr<TransactionDBCondVar>
+TransactionLockMgr::UnLockKey(const PessimisticTransaction* txn,
+                              const std::string& key,
+                              LockMapStripe* stripe, LockMap* lock_map,
+                              Env* env) {
 #ifdef NDEBUG
   (void)env;
 #endif
+  std::shared_ptr<TransactionDBCondVar> ret = nullptr;
   TransactionID txn_id = txn->GetID();
 
   auto stripe_iter = stripe->keys.find(key);
-  if (stripe_iter != stripe->keys.end()) {
-    auto& txns = stripe_iter->second.txn_ids;
+  if (stripe_iter != stripe->keys.end() && !stripe_iter->second.second.done) {
+    auto& txns = stripe_iter->second.second.txn_ids;
+    ret = stripe_iter->second.first;
     auto txn_it = std::find(txns.begin(), txns.end(), txn_id);
     // Found the key we locked.  unlock it.
     if (txn_it != txns.end()) {
       if (txns.size() == 1) {
-        stripe->keys.erase(stripe_iter);
+        //stripe->keys.erase(stripe_iter);
+        stripe_iter->second.second.done = true;
       } else {
         auto last_it = txns.end() - 1;
         if (txn_it != last_it) {
@@ -723,6 +740,7 @@ void TransactionLockMgr::UnLockKey(const PessimisticTransaction* txn,
     assert(txn->GetExpirationTime() > 0 &&
            txn->GetExpirationTime() < env->NowMicros());
   }
+  return ret;
 }
 
 void TransactionLockMgr::UnLock(PessimisticTransaction* txn,
@@ -741,11 +759,13 @@ void TransactionLockMgr::UnLock(PessimisticTransaction* txn,
   LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
 
   stripe->stripe_mutex->Lock();
-  UnLockKey(txn, key, stripe, lock_map, env);
+  auto condVar = UnLockKey(txn, key, stripe, lock_map, env);
   stripe->stripe_mutex->UnLock();
 
   // Signal waiting threads to retry locking
-  stripe->stripe_cv->NotifyAll();
+  if (condVar)
+    condVar->Notify(); // TODO(Conrad): This may still need a NotifyAll
+  //stripe->stripe_cv->NotifyAll();
 }
 
 void TransactionLockMgr::UnLock(const PessimisticTransaction* txn,
@@ -784,16 +804,22 @@ void TransactionLockMgr::UnLock(const PessimisticTransaction* txn,
       assert(lock_map->lock_map_stripes_.size() > stripe_num);
       LockMapStripe* stripe = lock_map->lock_map_stripes_.at(stripe_num);
 
+      std::vector<std::shared_ptr<TransactionDBCondVar> > conds;
+      conds.reserve(stripe_keys.size());
+
       stripe->stripe_mutex->Lock();
 
       for (const std::string* key : stripe_keys) {
-        UnLockKey(txn, *key, stripe, lock_map, env);
+        conds.emplace_back(UnLockKey(txn, *key, stripe, lock_map, env));
       }
 
       stripe->stripe_mutex->UnLock();
 
       // Signal waiting threads to retry locking
-      stripe->stripe_cv->NotifyAll();
+      //stripe->stripe_cv->NotifyAll();
+      for (auto& cVar : conds)
+        if (cVar)
+          cVar->Notify();
     }
   }
 }
@@ -818,9 +844,9 @@ TransactionLockMgr::LockStatusData TransactionLockMgr::GetLockStatusData() {
       j->stripe_mutex->Lock();
       for (const auto& it : j->keys) {
         struct KeyLockInfo info;
-        info.exclusive = it.second.exclusive;
+        info.exclusive = it.second.second.exclusive;
         info.key = it.first;
-        for (const auto& id : it.second.txn_ids) {
+        for (const auto& id : it.second.second.txn_ids) {
           info.ids.push_back(id);
         }
         data.insert({i, info});
