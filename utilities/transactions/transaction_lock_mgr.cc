@@ -378,6 +378,10 @@ Status TransactionLockMgr::AcquireWithTimeout(
   autovector<TransactionID> wait_ids;
   result = AcquireLocked(lock_map, stripe, key, env, lock_info,
                          &expire_time_hint, &wait_ids);
+  if (result.IsNotLocked()) {
+      stripe->stripe_mutex->UnLock();
+      return result;
+  }
 
   // if (!result.ok() && fail_fast) {
     // stripe->stripe_mutex->UnLock();
@@ -597,7 +601,8 @@ Status TransactionLockMgr::AcquireLocked(LockMap* lock_map,
           lock_info.expiration_time = txn_lock_info.expiration_time;
           // lock_cnt does not change
         } else {
-          result = Status::TimedOut(Status::SubCode::kLockTimeout);
+          //result = Status::TimedOut(Status::SubCode::kLockTimeout);
+          result = Status::LockBusy();
           *txn_ids = lock_info.txn_ids;
         }
       }

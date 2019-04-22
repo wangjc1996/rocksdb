@@ -59,7 +59,8 @@ class Status {
     kBusy = 11,
     kExpired = 12,
     kTryAgain = 13,
-    kCompactionTooLarge = 14
+    kCompactionTooLarge = 14,
+    kLockNotReady = 15
   };
 
   Code code() const { return code_; }
@@ -96,6 +97,10 @@ class Status {
 
   // Return a success status.
   static Status OK() { return Status(); }
+
+  static Status LockBusy(SubCode msg = kNone) {
+      return Status(kLockNotReady, msg);
+  }
 
   // Return error status of an appropriate type.
   static Status NotFound(const Slice& msg, const Slice& msg2 = Slice()) {
@@ -201,6 +206,8 @@ class Status {
 
   // Returns true iff the status indicates success.
   bool ok() const { return code() == kOk; }
+
+  bool IsNotLocked() const { return code() == kLockNotReady; }
 
   // Returns true iff the status indicates a NotFound error.
   bool IsNotFound() const { return code() == kNotFound; }
