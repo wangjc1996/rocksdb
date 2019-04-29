@@ -95,6 +95,7 @@ bool LockList::drop(TransactionID id) {
             expiration_time = std::max(expiration_time, en->expiration_time);
             holder_type = en->type;
             en->grant_lock();
+            cout << "Txn " << id << " giving lock " << key <<  " to " << en->tid << endl;
             LIST_PUT_TAIL(owners, owners_tail, en);
         } while (waiters != nullptr && 
                 waiters->type == lShared &&

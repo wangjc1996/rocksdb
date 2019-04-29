@@ -25,6 +25,8 @@
 #include "utilities/transactions/pessimistic_transaction_db.h"
 #include "utilities/transactions/transaction_util.h"
 
+#include <iostream>
+
 namespace rocksdb {
 
 struct WriteOptions;
@@ -88,6 +90,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
+    std::cout << "Deleting Txn " << GetID() << std::endl;
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
   if (expiration_time_ > 0) {
     txn_db_impl_->RemoveExpirableTransaction(txn_id_);
@@ -312,6 +315,7 @@ Status PessimisticTransaction::Commit() {
   bool commit_prepared = false;
 
   if (IsExpired()) {
+      std::cout << "Txn " << GetID() << " expired status" << std::endl;
     return Status::Expired();
   }
 
