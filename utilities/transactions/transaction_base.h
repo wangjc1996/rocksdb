@@ -63,16 +63,16 @@ class TransactionBaseImpl : public Transaction {
   using Transaction::GetForUpdate;
   Status GetForUpdate(const ReadOptions& options,
                       ColumnFamilyHandle* column_family, const Slice& key,
-                      std::string* value, bool exclusive) override;
+                      std::string* value, bool exclusive, void_f callback) override;
 
   Status GetForUpdate(const ReadOptions& options,
                       ColumnFamilyHandle* column_family, const Slice& key,
-                      PinnableSlice* pinnable_val, bool exclusive) override;
+                      PinnableSlice* pinnable_val, bool exclusive, void_f callback) override;
 
   Status GetForUpdate(const ReadOptions& options, const Slice& key,
-                      std::string* value, bool exclusive) override {
+                      std::string* value, bool exclusive, void_f callback) override {
     return GetForUpdate(options, db_->DefaultColumnFamily(), key, value,
-                        exclusive);
+                        exclusive, callback);
   }
 
   std::vector<Status> MultiGet(
@@ -241,22 +241,23 @@ class TransactionBaseImpl : public Transaction {
   WriteBatch* GetCommitTimeWriteBatch() override;
 
   virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
-               const Slice& value, bool optimistic = false) override;
+               const Slice& value, bool optimistic = false, void_f callback = DEFAULT) override;
 
-  virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false) override;
+  virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false,
+      void_f callback = DEFAULT) override;
 
-  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false) override;
+  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, void_f = DEFAULT) override;
 
   protected:
   void DoTrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive, bool optimistic = false);
 
   Status DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked = false);
 
-  Status DoPessimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false) {
-  return DoPessimisticLock(GetColumnFamilyID(column_family), key, read_only, exclusive, fail_fast, untracked); 
+  Status DoPessimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false, void_f callback = false) {
+  return DoPessimisticLock(GetColumnFamilyID(column_family), key, read_only, exclusive, fail_fast, untracked, callback); 
 }
 
-  virtual Status DoPessimisticLock(uint32_t cf_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false) = 0;
+  virtual Status DoPessimisticLock(uint32_t cf_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false, void_f callback = DEFAULT) = 0;
   // Add a key to the list of tracked keys.
   //
   // seqno is the earliest seqno this key was involved with this transaction.

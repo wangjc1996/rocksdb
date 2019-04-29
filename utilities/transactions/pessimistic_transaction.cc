@@ -103,7 +103,7 @@ void PessimisticTransaction::Clear() {
 }
 
 
-Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool skip_validate) {
+Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool skip_validate, void_f callback) {
   std::string key_str = key.ToString();
   bool previously_locked;
   bool lock_upgrade = false;
@@ -133,7 +133,7 @@ Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& k
   // Lock this key if this transactions hasn't already locked it or we require
   // an upgrade.
   if (!previously_locked || lock_upgrade) {
-    s = txn_db_impl_->DoTryLock(this, cfh_id, key_str, exclusive, fail_fast /* optimistic */);
+    s = txn_db_impl_->DoTryLock(this, cfh_id, key_str, exclusive, fail_fast /* optimistic */, callback);
   }
 
   SetSnapshotIfNeeded();

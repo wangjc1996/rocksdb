@@ -7,6 +7,7 @@
 
 #ifndef ROCKSDB_LITE
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,10 @@
 #include "rocksdb/status.h"
 
 namespace rocksdb {
+
+typedef std::function<void()> void_f;
+
+static void_f DEFAULT{ []() { assert(false); } };
 
 class Iterator;
 class TransactionDB;
@@ -228,14 +233,15 @@ class Transaction {
   virtual Status GetForUpdate(const ReadOptions& options,
                               ColumnFamilyHandle* column_family,
                               const Slice& key, std::string* value,
-                              bool exclusive = true) = 0;
+                              bool exclusive = true,
+                              void_f callback = DEFAULT) = 0;
 
   // An overload of the above method that receives a PinnableSlice
   // For backward compatibility a default implementation is provided
   virtual Status GetForUpdate(const ReadOptions& options,
                               ColumnFamilyHandle* /*column_family*/,
                               const Slice& key, PinnableSlice* pinnable_val,
-                              bool /*exclusive*/ = true) {
+                              bool /*exclusive*/ = true, void_f = DEFAULT) {
     if (pinnable_val == nullptr) {
       std::string* null_str = nullptr;
       return GetForUpdate(options, key, null_str);
@@ -247,7 +253,7 @@ class Transaction {
   }
 
   virtual Status GetForUpdate(const ReadOptions& options, const Slice& key,
-                              std::string* value, bool exclusive = true) = 0;
+                              std::string* value, bool exclusive = true, void_f callback = DEFAULT) = 0;
 
   virtual std::vector<Status> MultiGetForUpdate(
       const ReadOptions& options,
@@ -469,21 +475,21 @@ class Transaction {
   uint64_t GetId() { return id_; }
 
   virtual Status DoPut(ColumnFamilyHandle* column_family, const Slice& key,
-               const Slice& value, bool optimistic = false) = 0;
+               const Slice& value, bool optimistic = false, void_f callback = DEFAULT) = 0;
 
   Status DoPut(const Slice& key,
                const Slice& value, bool optimistic = false) {
     return DoPut(nullptr, key, value, optimistic);
   }
 
-  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false) = 0; 
+  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, void_f callback = DEFAULT) = 0; 
 
   Status DoGet(const ReadOptions& options, const Slice& key,
                      std::string* value, bool optimistic = false) {
     return DoGet(options, nullptr, key, value, optimistic);
   }
 
-  virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false) = 0; 
+  virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false, void_f callback = DEFAULT) = 0; 
 
   Status DoDelete(const Slice& key, bool optimistic = false) {
 	return DoDelete(nullptr, key, optimistic);

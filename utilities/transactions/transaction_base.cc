@@ -202,10 +202,11 @@ Status TransactionBaseImpl::Get(const ReadOptions& read_options,
 Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
                                          ColumnFamilyHandle* column_family,
                                          const Slice& key, std::string* value,
-                                         bool exclusive) {
+                                         bool exclusive, void_f callback) {
   (void)exclusive;
-  Status s = DoPessimisticLock(column_family, key, true /* read_only */, true /* exclusive */, true /* fail_fast */);
+  //(void)callback;
 
+  Status s = DoPessimisticLock(column_family, key, true /* read_only */, true /* exclusive */, true /* fail_fast */, false, callback);
   if (s.ok() && value != nullptr) {
     assert(value != nullptr);
     PinnableSlice pinnable_val(value);
@@ -222,7 +223,9 @@ Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
                                          ColumnFamilyHandle* column_family,
                                          const Slice& key,
                                          PinnableSlice* pinnable_val,
-                                         bool exclusive) {
+                                         bool exclusive, void_f callback) {
+  assert(false);
+  (void)callback;
   Status s = TryLock(column_family, key, true /* read_only */, exclusive);
 
   if (s.ok() && pinnable_val != nullptr) {
@@ -315,7 +318,9 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
 }
 
 Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyHandle* column_family,
-		const Slice& key, std::string* value, bool optimistic) {
+		const Slice& key, std::string* value, bool optimistic,
+                std::function<void()> callback) {
+  //(void)callback;
   assert(value != nullptr);
   PinnableSlice pinnable_val(value);
   assert(!pinnable_val.IsPinned());
@@ -329,7 +334,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
   if (optimistic) {
     s = DoOptimisticLock(column_family, key, true /* read_only */, false /* exclusive */);
   } else {
-    s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
+    s = DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */, false, callback);
   }
 
   if (s.ok()) {
@@ -343,13 +348,14 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 }
 
 Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
-                                const Slice& key, const Slice& value, bool optimistic) {
+                                const Slice& key, const Slice& value, bool optimistic, void_f callback) {
+  //(void)callback;
   Status s;
 
   if (optimistic) {
     s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
   } else {
-    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */, false, callback);
   }
 
   if (s.ok()) {
@@ -362,13 +368,14 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
   return s;
 }
 
-Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic) {
+Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic, void_f callback) {
+  //(void)callback;
   Status s;
 
   if (optimistic) {
     s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
   } else {
-    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */, false, callback);
   }
 
   if (s.ok()) {

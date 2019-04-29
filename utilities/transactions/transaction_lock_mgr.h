@@ -18,11 +18,11 @@
 #include "util/hash_map.h"
 #include "util/thread_local.h"
 #include "utilities/transactions/pessimistic_transaction.h"
+#include "utilities/transactions/transaction_lock_mgr_list.h"
 
 namespace rocksdb {
 
 class ColumnFamilyHandle;
-struct LockInfo;
 struct LockMap;
 struct LockMapStripe;
 
@@ -70,7 +70,8 @@ class TransactionLockMgr {
   // Attempt to lock key.  If OK status is returned, the caller is responsible
   // for calling UnLock() on this key.
   Status TryLock(PessimisticTransaction* txn, uint32_t column_family_id,
-                 const std::string& key, Env* env, bool exclusive, bool fail_fast = false);
+                 const std::string& key, Env* env, bool exclusive, bool fail_fast = false,
+                 void_f callback = DEFAULT);
 
   // Check a key is locked or not
   // return Busy for locked, OK for unlocked
@@ -127,11 +128,12 @@ class TransactionLockMgr {
   // Used to allocate mutexes/condvars to use when locking keys
   std::shared_ptr<TransactionDBMutexFactory> mutex_factory_;
 
-  bool IsLockExpired(TransactionID txn_id, const LockInfo& lock_info, Env* env,
-                     uint64_t* wait_time);
+  bool IsLockExpired(TransactionID, uint64_t, const autovector<TransactionID>&,
+          Env*, uint64_t* wait_time);
 
   std::shared_ptr<LockMap> GetLockMap(uint32_t column_family_id);
 
+  /*
   Status AcquireWithTimeout(PessimisticTransaction* txn, LockMap* lock_map, LockMapStripe* stripe, uint32_t column_family_id, const std::string& key, Env* env, int64_t timeout, const LockInfo& lock_info, bool fail_fast = false);
 
   Status AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
@@ -140,7 +142,7 @@ class TransactionLockMgr {
                        autovector<TransactionID>* txn_ids);
 
   Status GetLockStatus(LockMapStripe* stripe, const std::string& key, Env* env, int64_t timeout, const LockInfo& lock_info);
-
+  */
   void UnLockKey(const PessimisticTransaction* txn, const std::string& key,
                  LockMapStripe* stripe, LockMap* lock_map, Env* env);
 
