@@ -239,7 +239,8 @@ public:
       : txn_(txn) {}
 
   Status Callback(DB* db) override {
-    return txn_->CheckTransactionForConflicts(db);
+      (void)db;
+    return Status();
   }
 
   bool AllowWriteBatching() override { return true; }

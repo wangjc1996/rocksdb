@@ -291,7 +291,7 @@ Iterator* TransactionBaseImpl::GetIterator(const ReadOptions& read_options,
 }
 
 Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, bool untracked) {
-  if (untracked) {
+  if (untracked || true) {
     return Status::OK();
   }
 

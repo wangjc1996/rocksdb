@@ -391,7 +391,8 @@ Status PessimisticTransaction::Commit() {
 }
 
 Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
-  Status s = DoLockAll();
+  //Status s = DoLockAll();
+    Status s;
 
   if (!s.ok()) {
     return s;
