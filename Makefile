@@ -1923,7 +1923,8 @@ endif
 # ---------------------------------------------------------------------------
 
 all_sources = $(LIB_SOURCES) $(MAIN_SOURCES) $(MOCK_LIB_SOURCES) $(TOOL_LIB_SOURCES) $(BENCH_LIB_SOURCES) $(TEST_LIB_SOURCES) $(EXP_LIB_SOURCES)
-DEPFILES = $(all_sources:.cc=.cc.d)
+shared_sources = $(LIB_SOURCES) $(MAIN_SOURCES) #$(MOCK_LIB_SOURCES)
+DEPFILES = $(shared_sources:.cc=.cc.d)
 
 # Add proper dependency support so changing a .h file forces a .cc file to
 # rebuild.

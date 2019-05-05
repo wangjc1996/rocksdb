@@ -255,6 +255,7 @@ TEST_LIB_SOURCES = \
 MAIN_SOURCES =                                                          \
   cache/cache_bench.cc                                                  \
   cache/cache_test.cc                                                   \
+  cache/lru_cache_test.cc                                                  \
   db/column_family_test.cc                                              \
   db/compact_files_test.cc                                              \
   db/compaction_iterator_test.cc                                        \
@@ -295,38 +296,27 @@ MAIN_SOURCES =                                                          \
   db/db_write_test.cc                                                   \
   db/dbformat_test.cc                                                   \
   db/deletefile_test.cc                                                 \
-  db/env_timed_test.cc                                                  \
   db/error_handler_test.cc                                        	\
   db/external_sst_file_basic_test.cc                                    \
   db/external_sst_file_test.cc                                          \
   db/fault_injection_test.cc                                            \
   db/file_indexer_test.cc                                               \
-  db/file_reader_writer_test.cc                                         \
   db/filename_test.cc                                                   \
   db/flush_job_test.cc                                                  \
-  db/hash_table_test.cc                                                 \
-  db/hash_test.cc                                                       \
-  db/heap_test.cc                                                       \
   db/listener_test.cc                                                   \
   db/log_test.cc                                                        \
-  db/lru_cache_test.cc                                                  \
   db/manual_compaction_test.cc                                          \
   db/memtable_list_test.cc                                              \
   db/merge_helper_test.cc                                               \
   db/merge_test.cc                                                      \
   db/obsolete_files_test.cc						\
-  db/options_settable_test.cc                                           \
   db/options_file_test.cc                                               \
-  db/partitioned_filter_block_test.cc                                   \
   db/perf_context_test.cc                                               \
-  db/persistent_cache_test.cc                                           \
   db/plain_table_db_test.cc                                             \
   db/prefix_test.cc                                                     \
-  db/redis_test.cc                                                      \
   db/repair_test.cc                                                     \
   db/range_del_aggregator_test.cc                                       \
   db/table_properties_collector_test.cc                                 \
-  db/util_merge_operators_test.cc                                       \
   db/version_builder_test.cc                                            \
   db/version_edit_test.cc                                               \
   db/version_set_test.cc                                                \
@@ -344,9 +334,11 @@ MAIN_SOURCES =                                                          \
   monitoring/histogram_test.cc                                          \
   monitoring/iostats_context_test.cc                                    \
   monitoring/statistics_test.cc                                         \
+  options/options_settable_test.cc                                           \
   options/options_test.cc                                               \
   table/block_based_filter_block_test.cc                                \
   table/block_test.cc                                                   \
+  table/partitioned_filter_block_test.cc                                   \
   table/cleanable_test.cc                                               \
   table/cuckoo_table_builder_test.cc                                    \
   table/cuckoo_table_reader_test.cc                                     \
@@ -371,6 +363,9 @@ MAIN_SOURCES =                                                          \
   util/dynamic_bloom_test.cc                                            \
   util/event_logger_test.cc                                             \
   util/filelock_test.cc                                                 \
+  util/file_reader_writer_test.cc                                         \
+  util/hash_test.cc                                                       \
+  util/heap_test.cc                                                       \
   util/log_write_bench.cc                                               \
   util/rate_limiter_test.cc                                             \
   util/slice_transform_test.cc                                          \
@@ -387,6 +382,7 @@ MAIN_SOURCES =                                                          \
   utilities/column_aware_encoding_exp.cc                                \
   utilities/column_aware_encoding_test.cc                               \
   utilities/date_tiered/date_tiered_test.cc                             \
+  utilities/env_timed_test.cc                                        \
   utilities/document/document_db_test.cc                                \
   utilities/document/json_document_test.cc                              \
   utilities/geodb/geodb_test.cc                                         \
@@ -396,6 +392,8 @@ MAIN_SOURCES =                                                          \
   utilities/object_registry_test.cc                                     \
   utilities/option_change_migration/option_change_migration_test.cc     \
   utilities/options/options_util_test.cc                                \
+  utilities/persistent_cache/hash_table_test.cc                                                 \
+  utilities/persistent_cache/persistent_cache_test.cc                                           \
   utilities/redis/redis_lists_test.cc                                   \
   utilities/simulator_cache/sim_cache_test.cc                           \
   utilities/spatialdb/spatial_db_test.cc                                \
@@ -405,6 +403,7 @@ MAIN_SOURCES =                                                          \
   utilities/transactions/write_prepared_transaction_test.cc             \
   utilities/transactions/write_unprepared_transaction_test.cc           \
   utilities/ttl/ttl_test.cc                                             \
+  utilities/util_merge_operators_test.cc                                       \
   utilities/write_batch_with_index/write_batch_with_index_test.cc       \
 
 JNI_NATIVE_SOURCES =                                          \
