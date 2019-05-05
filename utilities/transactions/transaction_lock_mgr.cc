@@ -785,7 +785,7 @@ Status TransactionLockMgr::GetLockStatus(LockMapStripe* stripe,
 void TransactionLockMgr::UnLockKey(const PessimisticTransaction* txn,
                                    const std::string& key,
                                    LockMapStripe* stripe, LockMap* lock_map,
-                                   Env* env) {
+                                   Env* env, bool special) {
 #ifdef NDEBUG
   (void)env;
 #endif
@@ -808,7 +808,7 @@ void TransactionLockMgr::UnLockKey(const PessimisticTransaction* txn,
         txns.pop_back();
       }
 #endif
-      stripe_iter->second->drop(txn_id);
+      stripe_iter->second->drop(txn_id, special);
 
       if (max_num_locks_ > 0) {
         // Maintain lock count if there is a limit on the number of locks.
@@ -816,6 +816,7 @@ void TransactionLockMgr::UnLockKey(const PessimisticTransaction* txn,
         lock_map->lock_cnt--;
       }
   } else {
+      if (special) return;
     // This key is either not locked or locked by someone else.  This should
     // only happen if the unlocking transaction has expired.
     assert(txn->GetExpirationTime() > 0 &&
@@ -848,6 +849,10 @@ void TransactionLockMgr::UnLock(PessimisticTransaction* txn,
 
 void TransactionLockMgr::UnLock(const PessimisticTransaction* txn,
                                 const TransactionKeyMap* key_map, Env* env) {
+    //if (txn->is_last_attempt())
+        //std::cout << "Txn " << txn->GetID() << " has last attempt" << std::endl;
+    //else
+        /*std::cout << "Txn " << txn->GetID() << " has NO LAST ATTEMPT" << std::endl;*/
   for (auto& key_map_iter : *key_map) {
     uint32_t column_family_id = key_map_iter.first;
     auto& keys = key_map_iter.second;
@@ -884,6 +889,13 @@ void TransactionLockMgr::UnLock(const PessimisticTransaction* txn,
 
       stripe->stripe_mutex->Lock();
 
+      if (txn->is_last_attempt() && 
+              column_family_id == txn->last_column_family() && 
+              lock_map->GetStripe(txn->last_attempt_key()) == stripe_num) {
+          //std::cout  << "Removing special key" << std::endl;
+          UnLockKey(txn, txn->last_attempt_key(), stripe, lock_map, env, true);
+      }
+
       for (const std::string* key : stripe_keys) {
         UnLockKey(txn, *key, stripe, lock_map, env);
       }
@@ -894,6 +906,9 @@ void TransactionLockMgr::UnLock(const PessimisticTransaction* txn,
       stripe->stripe_cv->NotifyAll();
     }
   }
+
+
+  // Unlock last potential locked
 }
 
 TransactionLockMgr::LockStatusData TransactionLockMgr::GetLockStatusData() {

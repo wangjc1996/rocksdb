@@ -90,7 +90,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 }
 
 PessimisticTransaction::~PessimisticTransaction() {
-    std::cout << "Deleting Txn " << GetID() << std::endl;
+    //std::cout << "Deleting Txn " << GetID() << std::endl;
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
   if (expiration_time_ > 0) {
     txn_db_impl_->RemoveExpirableTransaction(txn_id_);
@@ -133,6 +133,10 @@ Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& k
     }
   }
 
+  last_attempt_ = key_str;
+  last_bool_ = true;
+  last_coll_id_ =  cfh_id;
+
   // Lock this key if this transactions hasn't already locked it or we require
   // an upgrade.
   if (!previously_locked || lock_upgrade) {
@@ -170,6 +174,7 @@ Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& k
     // tracked key. It could also update the tracked_at_seq if it is lower than
     // the existing trackey seq.
     DoTrackKey(cfh_id, key_str, tracked_at_seq, read_only, exclusive, false /* optimistic */);
+    last_bool_ = false;
   }
 
   return s;
@@ -315,7 +320,7 @@ Status PessimisticTransaction::Commit() {
   bool commit_prepared = false;
 
   if (IsExpired()) {
-      std::cout << "Txn " << GetID() << " expired status" << std::endl;
+      //std::cout << "Txn " << GetID() << " expired status" << std::endl;
     return Status::Expired();
   }
 

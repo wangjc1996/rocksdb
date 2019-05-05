@@ -144,7 +144,7 @@ class TransactionLockMgr {
   Status GetLockStatus(LockMapStripe* stripe, const std::string& key, Env* env, int64_t timeout, const LockInfo& lock_info);
   */
   void UnLockKey(const PessimisticTransaction* txn, const std::string& key,
-                 LockMapStripe* stripe, LockMap* lock_map, Env* env);
+                 LockMapStripe* stripe, LockMap* lock_map, Env* env, bool special = false);
 
   bool IncrementWaiters(const PessimisticTransaction* txn,
                         const autovector<TransactionID>& wait_ids,

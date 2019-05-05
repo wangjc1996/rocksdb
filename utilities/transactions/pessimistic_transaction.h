@@ -112,6 +112,10 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   int64_t GetDeadlockDetectDepth() const { return deadlock_detect_depth_; }
 
+  bool is_last_attempt() const { return last_bool_; }
+  bool last_column_family() const { return last_coll_id_; }
+  std::string last_attempt_key() const { return last_attempt_; }
+
  protected:
   Status DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false, void_f callback = DEFAULT) override;
   // Refer to
@@ -189,6 +193,11 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   // Whether to perform deadlock detection or not.
   int64_t deadlock_detect_depth_;
+
+  // Use to drop last attempted lock
+  bool last_bool_ = false;
+  uint32_t last_coll_id_;
+  std::string last_attempt_;
 
   virtual Status ValidateSnapshot(ColumnFamilyHandle* column_family,
                                   const Slice& key,

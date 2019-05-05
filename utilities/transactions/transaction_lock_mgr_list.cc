@@ -18,7 +18,7 @@ bool LockList::grab(TransactionID id, bool exclusive, uint64_t new_expr_time,
 
     // Already held
     if (owner_ptr != nullptr) {
-        cout << "Txn " << id << " reaquired lock " << key << endl;
+        //cout << "Txn " << id << " reaquired lock " << key << endl;
         //cout << "Found owner " << owner_ptr->tid << endl;
         // `owner_ptr being not null means `id owns the lock. If it owns it in
         // exclusive mode then the requested mode is irrelevant, if the request
@@ -51,8 +51,8 @@ bool LockList::grab(TransactionID id, bool exclusive, uint64_t new_expr_time,
         // false for lock still not held
         for (LockEntry* head = waiters; head != nullptr; head = head->next) {
             if (head->tid == id) {
-                cout << "Txn " << id << " double requested lock for " << 
-                    key << endl;
+                //cout << "Txn " << id << " double requested lock for " << 
+                    //key << endl;
                 assert(exclusive == (head->type == lExclusive));
                 return false;
             }
@@ -65,26 +65,36 @@ bool LockList::grab(TransactionID id, bool exclusive, uint64_t new_expr_time,
         holder_type = entry->type;
         expiration_time = entry->expiration_time;
         LIST_PUT_HEAD(owners, owners_tail, entry);
-        cout << "Txn " << id << " grabbing unheld lock " << key << endl;
+        //cout << "Txn " << id << " grabbing unheld lock " << key << endl;
         return true;
     } else if (!exclusive && holder_type == lShared && nowaiters()) {
         expiration_time = std::max(expiration_time, entry->expiration_time);
         LIST_PUT_TAIL(owners, owners_tail, entry);
-        cout << "Txn " << id << " grabbing shared lock " << key << endl;
+        //cout << "Txn " << id << " grabbing shared lock " << key << endl;
         return true;
     } else {
         LIST_PUT_TAIL(waiters, waiters_tail, entry);
-        cout << "Txn " << id << " waiting for lock " << key << endl;
+        //cout << "Txn " << id << " waiting for lock " << key << endl;
         return false;
     }
 
 }
 
-bool LockList::drop(TransactionID id) {
+bool LockList::drop(TransactionID id, bool special) {
     LockEntry* owner_ptr = find_owner_tid(id);
+    if (special && owner_ptr == nullptr) {
+      //cout << "Special txn " << id << " removing " << key << endl;
+      for (LockEntry* head = waiters; head != nullptr; head = head->next) {
+        if (head->tid == id) {
+          LIST_REMOVE(waiters, waiters_tail, head);
+          break;
+        }
+      }
+      return true;
+    }
     assert(owner_ptr != nullptr);
 
-    cout << "Txn " << id << " dropping lock " << key << endl;
+    //cout << "Txn " << id << " dropping lock " << key << endl;
     LIST_REMOVE(owners, owners_tail, owner_ptr);
     if (owners == nullptr && waiters != nullptr) {
         assert(owners_tail == nullptr && waiters_tail != nullptr);
@@ -95,7 +105,7 @@ bool LockList::drop(TransactionID id) {
             expiration_time = std::max(expiration_time, en->expiration_time);
             holder_type = en->type;
             en->grant_lock();
-            cout << "Txn " << id << " giving lock " << key <<  " to " << en->tid << endl;
+            //cout << "Txn " << id << " giving lock " << key <<  " to " << en->tid << endl;
             LIST_PUT_TAIL(owners, owners_tail, en);
         } while (waiters != nullptr && 
                 waiters->type == lShared &&

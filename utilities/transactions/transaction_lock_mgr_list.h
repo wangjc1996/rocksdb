@@ -70,7 +70,7 @@ struct LockList {
   bool nowaiters() { return waiters == nullptr; }
   bool grab(TransactionID id, bool exclusive, uint64_t new_expr_time,
       std::function<void()> callback);
-  bool drop(TransactionID id);
+  bool drop(TransactionID id, bool special = false);
   void fill_auto(autovector<TransactionID>* auto_);
 
   int key;
