@@ -81,7 +81,7 @@ class PessimisticTransactionDB : public TransactionDB {
                  const std::string& key, bool exclusive);
 
   Status DoTryLock(PessimisticTransaction* txn, uint32_t cfh_id, const std::string& key, bool exclusive,
-          bool optimistic = false, void_f callback = DEFAULT);
+          bool optimistic = false, volatile bool* callback = nullptr);
 
   Status CheckLock(PessimisticTransaction* txn, uint32_t cfh_id, const std::string& key, bool exclusive);
 

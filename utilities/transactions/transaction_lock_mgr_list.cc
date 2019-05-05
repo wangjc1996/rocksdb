@@ -13,7 +13,7 @@ using std::endl;
 namespace rocksdb {
 
 bool LockList::grab(TransactionID id, bool exclusive, uint64_t new_expr_time,
-        std::function<void()> callback) {
+        volatile bool* callback) {
     LockEntry* owner_ptr = find_owner_tid(id);
 
     // Already held

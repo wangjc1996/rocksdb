@@ -202,7 +202,7 @@ Status TransactionBaseImpl::Get(const ReadOptions& read_options,
 Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
                                          ColumnFamilyHandle* column_family,
                                          const Slice& key, std::string* value,
-                                         bool exclusive, void_f callback) {
+                                         bool exclusive, volatile bool* callback) {
   (void)exclusive;
   //(void)callback;
 
@@ -223,7 +223,7 @@ Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
                                          ColumnFamilyHandle* column_family,
                                          const Slice& key,
                                          PinnableSlice* pinnable_val,
-                                         bool exclusive, void_f callback) {
+                                         bool exclusive, volatile bool* callback) {
   assert(false);
   (void)callback;
   Status s = TryLock(column_family, key, true /* read_only */, exclusive);
@@ -319,7 +319,7 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
 
 Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyHandle* column_family,
 		const Slice& key, std::string* value, bool optimistic,
-                std::function<void()> callback) {
+                volatile bool* callback) {
   //(void)callback;
   assert(value != nullptr);
   PinnableSlice pinnable_val(value);
@@ -348,7 +348,7 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
 }
 
 Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
-                                const Slice& key, const Slice& value, bool optimistic, void_f callback) {
+                                const Slice& key, const Slice& value, bool optimistic, volatile bool* callback) {
   //(void)callback;
   Status s;
 
@@ -368,7 +368,7 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
   return s;
 }
 
-Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic, void_f callback) {
+Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic, volatile bool* callback) {
   //(void)callback;
   Status s;
 

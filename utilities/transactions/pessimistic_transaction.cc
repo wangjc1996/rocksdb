@@ -106,7 +106,7 @@ void PessimisticTransaction::Clear() {
 }
 
 
-Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool skip_validate, void_f callback) {
+Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool skip_validate, volatile bool* callback) {
   std::string key_str = key.ToString();
   bool previously_locked;
   bool lock_upgrade = false;

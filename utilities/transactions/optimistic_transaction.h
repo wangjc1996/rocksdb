@@ -49,7 +49,7 @@ class OptimisticTransaction : public TransactionBaseImpl {
  protected:
   Status DoPessimisticLock(uint32_t cfh_id, const Slice& key,
                  bool read_only, bool exclusive, bool fail_fast,
-                 bool untracked = false, void_f callback = DEFAULT) override {
+                 bool untracked = false, volatile bool* callback = nullptr) override {
     (void)cfh_id;
     (void)key;
     (void)read_only;

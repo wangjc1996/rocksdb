@@ -46,15 +46,15 @@ struct LockEntry {
   LockType type;
   TransactionID tid;
   uint64_t expiration_time;
-  std::function<void()> callback;
+  volatile bool* callback;
 
   LockEntry* next = nullptr;
   LockEntry* prev = nullptr;
 
-  void grant_lock() { callback(); }
+  void grant_lock() { *callback = true; }
 
   LockEntry(TransactionID tid_, uint64_t time, bool ex,
-      std::function<void()> callback_)
+      volatile bool* callback_)
     : type(ex ? lExclusive : lShared), tid(tid_), expiration_time(time),
       callback(callback_) {}
 };
@@ -69,7 +69,7 @@ struct LockList {
   
   bool nowaiters() { return waiters == nullptr; }
   bool grab(TransactionID id, bool exclusive, uint64_t new_expr_time,
-      std::function<void()> callback);
+      volatile bool* callback);
   bool drop(TransactionID id, bool special = false);
   void fill_auto(autovector<TransactionID>* auto_);
 

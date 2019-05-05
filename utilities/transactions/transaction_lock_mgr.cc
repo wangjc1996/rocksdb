@@ -278,7 +278,7 @@ Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
                                    uint32_t column_family_id,
                                    const std::string& key, Env* env,
                                    bool exclusive, bool fail_fast,
-                                   void_f callback) {
+                                   volatile bool* callback) {
   (void)env;
   (void)fail_fast;
 
