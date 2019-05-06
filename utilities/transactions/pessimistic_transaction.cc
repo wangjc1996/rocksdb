@@ -802,7 +802,7 @@ Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int6
   } else if (conflict_piece != UINT_MAX && metadata->current_piece_idx >= conflict_piece) {
     return Status::OK();
   } else if (used_period > 15000000) { // 15000000 microseconds
-    printf("Alert Timeout\n");
+//    printf("Alert Timeout - self type %d(current piece %d) dep on type %d(current piece %d) \n", metaData->txn_type, metaData->current_piece_idx.load(), metadata->txn_type, metadata->current_piece_idx.load());
     return Status::TimedOut();
   }
   return Status::Incomplete();

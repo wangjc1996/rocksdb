@@ -148,7 +148,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
   Status WaitForDependency();
 
-  static Status CheckTransactionState(TxnMetaData* metadata, int64_t used_period, unsigned int conflict_piece = UINT_MAX);
+  Status CheckTransactionState(TxnMetaData* metadata, int64_t used_period, unsigned int conflict_piece = UINT_MAX);
 
   Status ReleaseDirty();
 
