@@ -701,6 +701,36 @@ Status PessimisticTransaction::CheckTransactionForConflicts(DB* db) {
                                                   true /* cache_only */);
 }
 
+Status PessimisticTransaction::UpdateNearbySeqForInsert(DB* db) {
+  Status status;
+
+  auto db_impl = static_cast_with_check<DBImpl, DB>(db);
+
+  for (auto& key_map_iter : GetTrackedKeys()) {
+    uint32_t cf_id = key_map_iter.first;
+    const auto& keys = key_map_iter.second;
+
+    for (const auto& key_iter : keys) {
+      const auto& key = key_iter.first;
+      const uint8_t key_state = key_iter.second.key_state;
+
+      if ((key_state & 1) != 0) {
+        // indicate it is a OCC read
+        if (key_iter.second.is_nearby_key) {
+          assert(key_iter.second.dependent_txn == 0);
+          LookupKey lkey(key, key_iter.second.seq);
+          status = db_impl->UpdateNearbyNodeSeq(cf_id, lkey, key.empty()/*head_node*/);
+          if (!status.ok()) {
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return status;
+}
+
 Status PessimisticTransaction::DoLockAll() {
   // get tracked keys used by occ
   const TransactionKeyMap& key_map = GetTrackedKeys();

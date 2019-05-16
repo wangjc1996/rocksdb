@@ -20,9 +20,9 @@ class SkipListRep : public MemTableRep {
 public:
  explicit SkipListRep(const MemTableRep::KeyComparator& compare,
                       Allocator* allocator, const SliceTransform* transform,
-                      const size_t lookahead)
+                      const size_t lookahead, const size_t head_key_size)
      : MemTableRep(allocator),
-       skip_list_(compare, allocator),
+       skip_list_(compare, allocator, head_key_size),
        cmp_(compare),
        transform_(transform),
        lookahead_(lookahead) {}
@@ -77,6 +77,15 @@ public:
          iter.Valid() && callback_func(callback_args, iter.key());
          iter.Next()) {
     }
+  }
+
+  virtual void GetNearby(const LookupKey& k, void* callback_args,
+                         bool (*callback_func)(void* arg, const char* entry)) override {
+    skip_list_.GetNearby(k.memtable_key().data(), callback_args, callback_func);
+  }
+
+  virtual void GetHeadNode(char** buf) override {
+    *buf = skip_list_.GetHeadNode();
   }
 
   uint64_t ApproximateNumEntries(const Slice& start_ikey,
@@ -283,7 +292,34 @@ public:
 MemTableRep* SkipListFactory::CreateMemTableRep(
     const MemTableRep::KeyComparator& compare, Allocator* allocator,
     const SliceTransform* transform, Logger* /*logger*/) {
-  return new SkipListRep(compare, allocator, transform, lookahead_);
+
+  Slice key;
+  Slice value;
+  SequenceNumber seq = 0;
+  ValueType type = kMaxValue;
+
+  uint32_t key_size = static_cast<uint32_t>(key.size());
+  uint32_t val_size = static_cast<uint32_t>(value.size());
+  uint32_t internal_key_size = key_size + 8;
+  const uint32_t encoded_len = VarintLength(internal_key_size) +
+                               internal_key_size + VarintLength(val_size) +
+                               val_size;
+  // this encoded_len is for allocate head node inside skiplist
+  auto* skip_list = new SkipListRep(compare, allocator, transform, lookahead_, encoded_len);
+
+  char* buf = nullptr;
+  skip_list->GetHeadNode(&buf);
+
+  // do not need lock here since it is initial procedure
+  char* p = EncodeVarint32(buf, internal_key_size);
+  memcpy(p, key.data(), key_size);
+  p += key_size;
+  uint64_t packed = PackSequenceAndType(seq, type);
+  EncodeFixed64(p, packed);
+  p += 8;
+  p = EncodeVarint32(p, val_size);
+  memcpy(p, value.data(), val_size);
+  return skip_list;
 }
 
 } // namespace rocksdb

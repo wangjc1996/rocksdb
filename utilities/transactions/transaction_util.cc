@@ -203,15 +203,25 @@ Status TransactionUtil::CheckKeysForConflicts(PessimisticTransaction* txn,
             result = CheckKey(db_impl, sv, earliest_seq, metaData->commit_seq, key, cache_only);
           }
         } else {
-          // clean read validation
-          result = CheckKey(db_impl, sv, earliest_seq, key_seq, key, cache_only);
+          if (!key_iter.second.is_head_node) {
+            // normal key clean read validation
+            result = CheckKey(db_impl, sv, earliest_seq, key_seq, key, cache_only);
+          } else {
+            // validate the head node in skiplist
+            SequenceNumber seq = kMaxSequenceNumber;
+            db_impl->GetHeadNodeInfoBySV(sv, &seq);
+            if (seq == kMaxSequenceNumber || seq > key_seq) {
+              result = Status::Busy();
+            }
+          }
         }
 
         if (!result.ok()) {
           break;
         }
 
-        result = txn_db_impl->CheckLock(txn, cf_id, key, true /*exclusive*/);
+        if (!key_iter.second.is_head_node) result = txn_db_impl->CheckLock(txn, cf_id, key, true /*exclusive*/);
+
         if (!result.ok()) {
           break;
         }

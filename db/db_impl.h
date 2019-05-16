@@ -695,6 +695,10 @@ class DBImpl : public DB {
   static Status CreateAndNewDirectory(Env* env, const std::string& dirname,
                                       std::unique_ptr<Directory>* directory);
 
+  Status GetHeadNodeInfoBySV(SuperVersion* sv, SequenceNumber *seq);
+
+  Status GetHeadNodeInfoByID(uint32_t column_family_id, SequenceNumber *seq);
+
  protected:
   Env* const env_;
   const std::string dbname_;
@@ -803,6 +807,10 @@ class DBImpl : public DB {
   Status RemoveDirty(uint32_t column_family_id, const string& key, TransactionID txn_id);
 
   Status RemoveScanDirty(uint32_t column_family_id, TransactionID txn_id);
+
+  Status GetNearbyInfo(ColumnFamilyHandle* column_family, const string& key, std::string* nearby_key, SequenceNumber* nearby_seq, bool* found_head_node);
+
+  Status UpdateNearbyNodeSeq(uint32_t column_family_id, const LookupKey& lkey, bool is_head_node);
 
  private:
   friend class DB;

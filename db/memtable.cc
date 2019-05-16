@@ -93,9 +93,10 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       creation_seq_(latest_seq),
       mem_next_logfile_number_(0),
       min_prep_log_referenced_(0),
-      locks_(moptions_.inplace_update_support
-                 ? moptions_.inplace_update_num_locks
-                 : 0),
+//      locks_(moptions_.inplace_update_support
+//                 ? moptions_.inplace_update_num_locks
+//                 : 0),
+      locks_(moptions_.inplace_update_num_locks),
       prefix_extractor_(mutable_cf_options.prefix_extractor.get()),
       flush_state_(FLUSH_NOT_REQUESTED),
       env_(ioptions.env),
@@ -607,6 +608,11 @@ static bool SaveValue(void* arg, const char* entry) {
   // all entries with overly large sequence numbers.
   uint32_t key_length;
   const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
+
+  // set read lock on the node
+  Slice user_key(key_ptr, key_length - 8);
+  ReadLock rl(s->mem->GetLock(user_key));
+
   if (s->mem->GetInternalKeyComparator().user_comparator()->Equal(
           Slice(key_ptr, key_length - 8), s->key->user_key())) {
     // Correct user key
@@ -974,6 +980,189 @@ void MemTable::RefLogContainingPrepSection(uint64_t log) {
 
 uint64_t MemTable::GetMinLogContainingPrepSection() {
   return min_prep_log_referenced_.load();
+}
+
+struct NearbySaver {
+  Status* status;
+  bool* found_head_node;
+  std::string* nearby_key;
+  SequenceNumber nearby_seq;
+  MemTable* mem;
+  Slice tmp_user_key;
+  ValueType node_type;
+  bool first_call;
+};
+
+static bool SaveNearbyValue(void* arg, const char* entry) {
+  NearbySaver* saver = reinterpret_cast<NearbySaver*>(arg);
+  assert(saver != nullptr);
+
+  if (entry == nullptr) {
+    *(saver->status) = Status::NotFound();
+    return true;
+  }
+
+  // entry format is:
+  //    klength  varint32
+  //    userkey  char[klength-8]
+  //    tag      uint64
+  //    vlength  varint32
+  //    value    char[vlength]
+  uint32_t key_length;
+  const char *key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
+
+  // set read lock on the node
+  Slice user_key(key_ptr, key_length - 8);
+  ReadLock rl(saver->mem->GetLock(user_key));
+
+  // Correct user key
+  const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
+  ValueType type;
+  SequenceNumber seq;
+  UnPackSequenceAndType(tag, &seq, &type);
+
+  // find the head node in skiplist
+  if (type == kMaxValue) {
+    if (!saver->first_call && saver->node_type == kTypeValue) {
+      // the tmp_user_key can be returned legally
+      saver->nearby_key->assign(saver->tmp_user_key.data(), saver->tmp_user_key.size());
+    } else {
+      Slice head(key_ptr, key_length - 8);
+      saver->nearby_key->assign(head.data(), head.size());
+      saver->nearby_seq = seq;
+      *(saver->found_head_node) = true;
+    }
+    *(saver->status) = Status::OK();
+    return false;
+  }
+
+  if (saver->first_call) {
+    saver->nearby_seq = seq;
+    saver->tmp_user_key = Slice(key_ptr, key_length - 8);
+    saver->node_type = type;
+    saver->first_call = false;
+  } else {
+    if (saver->mem->GetInternalKeyComparator().user_comparator()->Equal(
+        user_key, saver->tmp_user_key)) {
+      // if user_key is equal to tmp_key, update the tmp_key's info (type & seq number)
+      saver->nearby_seq = seq;
+      saver->node_type = type;
+    } else {
+      if (saver->node_type == kTypeValue) {
+        // the tmp_user_key can be returned legally
+        saver->nearby_key->assign(saver->tmp_user_key.data(), saver->tmp_user_key.size());
+        *(saver->status) = Status::OK();
+        return false;
+      } else {
+        // the old tmp_user_key is invalid, change the tmp_user_key to the new key
+        // and continue searching
+        saver->nearby_seq = seq;
+        saver->tmp_user_key = Slice(key_ptr, key_length - 8);
+        saver->node_type = type;
+      }
+    }
+  }
+  return true;
+}
+
+void MemTable::GetNearby(const LookupKey& key, std::string* nearby_key, SequenceNumber* nearby_seq, bool* found_head_node, Status* status) {
+  NearbySaver saver;
+  saver.status = status;
+  *(saver.status) = Status::NotFound();
+  saver.found_head_node = found_head_node;
+  saver.nearby_key = nearby_key;
+  saver.nearby_seq = kMaxSequenceNumber;
+  saver.mem = this;
+  saver.node_type = kTypeDeletion;
+  saver.first_call = true;
+  table_->GetNearby(key, &saver, SaveNearbyValue);
+
+  *nearby_seq = saver.nearby_seq;
+}
+
+bool MemTable::UpdateNodeSeq(const LookupKey& lkey, bool is_head_node) {
+
+  WriteLock wl(GetLock(lkey.user_key()));
+
+  if (is_head_node) {
+    char* buf = nullptr;
+    table_->GetHeadNode(&buf);
+
+    uint32_t key_length = 0;
+    const char* key_ptr = GetVarint32Ptr(buf, buf + 5, &key_length);
+
+    // unpack the old info
+    const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
+    ValueType type;
+    SequenceNumber existing_seq;
+    UnPackSequenceAndType(tag, &existing_seq, &type);
+    assert(existing_seq != kMaxSequenceNumber);
+    assert(type == kMaxValue);
+
+    // update seq number inplace by ++
+    uint64_t packed = PackSequenceAndType(existing_seq + 1, type);
+    EncodeFixed64(const_cast<char *>(key_ptr) + key_length - 8, packed);
+    return true;
+  }
+
+  Slice mem_key = lkey.memtable_key();
+  std::unique_ptr<MemTableRep::Iterator> iter(
+      table_->GetDynamicPrefixIterator());
+  iter->Seek(lkey.internal_key(), mem_key.data());
+
+  if (iter->Valid()) {
+    // entry format is:
+    //    key_length  varint32
+    //    userkey  char[klength-8]
+    //    tag      uint64
+    //    vlength  varint32
+    //    value    char[vlength]
+    // Check that it belongs to same user key.  We do not check the
+    // sequence number since the Seek() call above should have skipped
+    // all entries with overly large sequence numbers.
+    const char* entry = iter->key();
+    uint32_t key_length = 0;
+    const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
+    if (comparator_.comparator.user_comparator()->Equal(
+        Slice(key_ptr, key_length - 8), lkey.user_key())) {
+      // Correct user key
+      // unpack the old info
+      const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
+      ValueType type;
+      SequenceNumber existing_seq;
+      UnPackSequenceAndType(tag, &existing_seq, &type);
+      assert(existing_seq != kMaxSequenceNumber);
+
+      if (type == kTypeValue) {
+        // update seq number inplace by ++
+        uint64_t packed = PackSequenceAndType(existing_seq + 1, type);
+        EncodeFixed64(const_cast<char *>(key_ptr) + key_length - 8, packed);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+void MemTable::GetHeadNodeSeq(SequenceNumber* seq) {
+
+  Slice user_key;
+  ReadLock rl(GetLock(user_key));
+
+  char* buf = nullptr;
+  table_->GetHeadNode(&buf);
+
+  uint32_t key_length = 0;
+  const char* key_ptr = GetVarint32Ptr(buf, buf + 5, &key_length);
+
+  // unpack the info
+  const uint64_t tag = DecodeFixed64(key_ptr + key_length - 8);
+  ValueType type;
+  SequenceNumber existing_seq;
+  UnPackSequenceAndType(tag, &existing_seq, &type);
+  assert(type == kMaxValue);
+
+  *seq = existing_seq;
 }
 
 }  // namespace rocksdb

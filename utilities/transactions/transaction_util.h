@@ -34,8 +34,13 @@ struct TransactionKeyMapInfo {
   bool is_dirty_read;
   TransactionID dependent_txn;
 
+  bool is_nearby_key;
+  bool is_head_node;
+
   explicit TransactionKeyMapInfo(SequenceNumber seq_no)
-      : seq(seq_no), num_writes(0), num_reads(0), exclusive(false), key_state(0), is_dirty_read(false), dependent_txn(0) {}
+      : seq(seq_no), num_writes(0), num_reads(0),
+        exclusive(false), key_state(0), is_dirty_read(false),
+        dependent_txn(0), is_nearby_key(false), is_head_node(false) {}
 };
 
 using TransactionKeyMap =

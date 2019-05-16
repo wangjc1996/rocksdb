@@ -159,6 +159,11 @@ class BaseDeltaIterator : public Iterator {
                             : delta_iterator_->Entry().value;
   }
 
+  SequenceNumber seq() const override {
+    return current_at_base_ ? base_iterator_->seq()
+                            : kMaxSequenceNumber;
+  }
+
   Status status() const override {
     if (!status_.ok()) {
       return status_;

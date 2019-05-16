@@ -3159,5 +3159,55 @@ Status DBImpl::EndTrace() {
   return s;
 }
 
+Status DBImpl::GetNearbyInfo(ColumnFamilyHandle *column_family, const string &key,
+                             std::string *nearby_key, SequenceNumber *nearby_seq,
+                             bool* found_head_node) {
+
+  auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
+  auto cfd = cfh->cfd();
+
+  // Acquire SuperVersion
+  SuperVersion* sv = GetAndRefSuperVersion(cfd);
+
+  Status s;
+
+  SequenceNumber snapshot = last_seq_same_as_publish_seq_
+             ? versions_->LastSequence()
+             : versions_->LastPublishedSequence();
+
+  LookupKey lkey(key, snapshot);
+  sv->mem->GetNearby(lkey, nearby_key, nearby_seq, found_head_node, &s);
+
+  ReturnAndCleanupSuperVersion(cfd, sv);
+
+  return s;
+}
+
+Status DBImpl::UpdateNearbyNodeSeq(uint32_t column_family_id, const LookupKey &lkey,
+                                   bool is_head_node) {
+  Status s;
+  SuperVersion* sv = GetAndRefSuperVersion(column_family_id);
+
+  bool res = sv->mem->UpdateNodeSeq(lkey, is_head_node);
+
+  if (!res) s = Status::Busy();
+
+  ReturnAndCleanupSuperVersion(column_family_id, sv);
+
+  return s;
+}
+
+Status DBImpl::GetHeadNodeInfoBySV(SuperVersion* sv, SequenceNumber *seq) {
+  sv->mem->GetHeadNodeSeq(seq);
+  return Status::OK();
+}
+
+Status DBImpl::GetHeadNodeInfoByID(uint32_t column_family_id, SequenceNumber *seq) {
+  SuperVersion* sv = GetAndRefSuperVersion(column_family_id);
+  sv->mem->GetHeadNodeSeq(seq);
+  ReturnAndCleanupSuperVersion(column_family_id, sv);
+  return Status::OK();
+}
+
 #endif  // ROCKSDB_LITE
 }  // namespace rocksdb

@@ -219,6 +219,8 @@ class PessimisticTransaction : public TransactionBaseImpl {
   // Should only be called on writer thread.
   Status CheckTransactionForConflicts(DB* db);
 
+  Status UpdateNearbySeqForInsert(DB* db);
+
   // No copying allowed
   PessimisticTransaction(const PessimisticTransaction&);
   void operator=(const PessimisticTransaction&);
@@ -254,7 +256,11 @@ public:
       : txn_(txn) {}
 
   Status Callback(DB* db) override {
-    return txn_->CheckTransactionForConflicts(db);
+    Status status = txn_->CheckTransactionForConflicts(db);
+    if (status.ok()) {
+      status = txn_->UpdateNearbySeqForInsert(db);
+    }
+    return status;
   }
 
   bool AllowWriteBatching() override { return true; }

@@ -196,6 +196,10 @@ class DBIter final: public Iterator {
       return iter_->value();
     }
   }
+  virtual SequenceNumber seq() const override {
+    assert(valid_);
+    return saved_key_.GetSeq();
+  }
   virtual Status status() const override {
     if (status_.ok()) {
       return iter_->status();
@@ -496,6 +500,7 @@ bool DBIter::FindNextUserEntryInternal(bool skipping, bool prefix_check) {
             break;
           case kTypeValue:
           case kTypeBlobIndex:
+            saved_key_.SetStoredSeq(ikey_.sequence);
             if (start_seqnum_ > 0) {
               // we are taking incremental snapshot here
               // incremental snapshots aren't supported on DB with range deletes
@@ -1484,6 +1489,7 @@ inline void ArenaWrappedDBIter::Next() { db_iter_->Next(); }
 inline void ArenaWrappedDBIter::Prev() { db_iter_->Prev(); }
 inline Slice ArenaWrappedDBIter::key() const { return db_iter_->key(); }
 inline Slice ArenaWrappedDBIter::value() const { return db_iter_->value(); }
+inline SequenceNumber ArenaWrappedDBIter::seq() const { return db_iter_->seq(); }
 inline Status ArenaWrappedDBIter::status() const { return db_iter_->status(); }
 bool ArenaWrappedDBIter::IsBlob() const { return db_iter_->IsBlob(); }
 inline Status ArenaWrappedDBIter::GetProperty(std::string prop_name,

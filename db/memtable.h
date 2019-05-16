@@ -231,6 +231,15 @@ class MemTable {
                       const Slice& key,
                       const Slice& delta);
 
+  // find a key's precursor node
+  void GetNearby(const LookupKey& key, std::string* nearby_key, SequenceNumber* nearby_seq, bool* found_head_node, Status* status);
+
+  // skiplist target node's seq ++
+  bool UpdateNodeSeq(const LookupKey& lkey, bool is_head_node = false);
+
+  // return the skiplist head node's seq
+  void GetHeadNodeSeq(SequenceNumber* seq);
+
   // Returns the number of successive merge entries starting from the newest
   // entry for the key up to the last non-merge entry or last entry for the
   // key in the memtable.

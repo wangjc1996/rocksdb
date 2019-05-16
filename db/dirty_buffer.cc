@@ -218,7 +218,7 @@ namespace rocksdb {
         if (dirty->write_info->deletion_) {
           callback->InvokeDeletion(dirty->key_);
         } else {
-          callback->Invoke(dirty->key_, dirty->write_info->value_);
+          callback->Invoke(dirty->key_, dirty->write_info->value_, dirty->txn_id_);
         }
         // track dependency
         if (dirty->txn_id_ == context->self_txn_id) {

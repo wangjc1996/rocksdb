@@ -5,6 +5,7 @@
 
 #ifndef ROCKSDB_LITE
 
+#include "util/cast_util.h"
 #include "utilities/transactions/transaction_base.h"
 
 #include "db/db_impl.h"
@@ -311,7 +312,7 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
 
   std::string key_str = key.ToString();
 
-  DoTrackKey(cfh_id, key_str, seq, read_only, exclusive, true /* optimistic */, dependent_id);
+  DoTrackKey(cfh_id, key_str, seq, read_only, exclusive, true /* optimistic */, false /* nearby_key */, false /* head_node */, dependent_id);
 
   // Always return OK. Confilct checking will happen at commit time.
   return Status::OK();
@@ -457,6 +458,101 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
   }
 
   return s;
+}
+
+Status TransactionBaseImpl::DoInsert(ColumnFamilyHandle *column_family, const Slice &key,
+                                     const Slice &value, bool optimistic,
+                                     bool is_public_write, string *debug_nearby_key) {
+  Status s;
+
+  if (optimistic) {
+    s = DoOptimisticLock(column_family, key, false /* read_only */, true /* exclusive */);
+  } else {
+    // fail_fast is meaningless, will not be used anyway -> transaction_lock_mgr.cc:AcquireWithTimeout
+    s = DoPessimisticLock(column_family, key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+  }
+
+  if (s.ok()) {
+    s = GetBatchForWrite()->Put(column_family, key, value);
+    if (s.ok()) {
+      num_puts_++;
+    }
+    SequenceNumber seq;
+    if (snapshot_) {
+      seq = snapshot_->GetSequenceNumber();
+    } else {
+      seq = db_->GetLatestSequenceNumber();
+    }
+
+    if (optimistic && is_public_write) {
+      // put a uncommitted version into dirty buffer & track w-w, anti-dependencies
+      DirtyWriteBufferContext context{};
+      s = dbimpl_->WriteDirtyPut(column_family, key.ToString(), value.ToString(), seq, GetID(), &context);
+
+      // record w-w dependency
+      if (context.wrtie_txn_id != 0) {
+        if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), context.wrtie_txn_id) == depend_txn_ids_.end()) {
+          depend_txn_ids_.emplace_back(context.wrtie_txn_id);
+        }
+      }
+      // record anti-dependency & scan-dep ids
+      for (auto read_txn_id : context.read_txn_ids) {
+        if(std::find(depend_txn_ids_.begin(), depend_txn_ids_.end(), read_txn_id) == depend_txn_ids_.end()) {
+          depend_txn_ids_.emplace_back(read_txn_id);
+        }
+      }
+    }
+
+    // insert operation need to find its nearby node, conflict with range query
+    seq = kMaxSequenceNumber;
+    if (column_family == nullptr) column_family = db_->DefaultColumnFamily();
+
+    string nearby_key;
+    bool found_head_node = false;
+    s = dbimpl_->GetNearbyInfo(column_family, key.ToString(), &nearby_key, &seq, &found_head_node);
+
+    // if nearby node exist. add the nearby node to read set
+    if (s.ok()) {
+      uint32_t cfh_id = GetColumnFamilyID(column_family);
+
+      if (found_head_node) {
+        // add the head key to read set
+        DoTrackKey(cfh_id, nearby_key, seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/,
+                   true /*nearby_key*/, true /*head_node*/);
+      } else {
+        // add the nearby key to read set
+        DoTrackKey(cfh_id, nearby_key, seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/,
+                   true /*nearby_key*/);
+      }
+    }
+
+    if (debug_nearby_key != nullptr) {
+      *debug_nearby_key = nearby_key;
+    }
+  }
+  return s;
+}
+
+void TransactionBaseImpl::TrackHeadNode(ColumnFamilyHandle* column_family) {
+
+  uint32_t column_family_id = column_family == nullptr ? 0 : column_family->GetID();
+  Slice head;
+  SequenceNumber seq = kMaxSequenceNumber;
+  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+  db_impl->GetHeadNodeInfoByID(column_family_id, &seq);
+
+  assert(seq != kMaxSequenceNumber);
+  // add head node in the key to read set
+  DoTrackKey(column_family_id, head.ToString(), seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/, false /*nearby_key*/, true /*head_node*/);
+}
+
+void TransactionBaseImpl::TrackScanKey(ColumnFamilyHandle* column_family, const Slice& key, const SequenceNumber seq, bool optimistic, TransactionID dependent_id) {
+  if (column_family == nullptr) column_family = db_->DefaultColumnFamily();
+  uint32_t cfh_id = GetColumnFamilyID(column_family);
+
+  // add the key to read set
+  DoTrackKey(cfh_id, key.ToString(), seq, true /*read_only*/, false /*exclusive*/,
+             optimistic /*optimistic*/, false /* nearby_key */, false /* head_node */, dependent_id);
 }
 
 Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic, bool is_public_write) {
@@ -734,7 +830,9 @@ uint64_t TransactionBaseImpl::GetNumKeys() const {
 
 void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
                                    SequenceNumber seq, bool read_only,
-                                   bool exclusive, bool optimistic, TransactionID dependent_id) {
+                                   bool exclusive, bool optimistic,
+                                   bool is_nearby_key, bool is_head_node,
+                                   TransactionID dependent_id) {
   auto& cf_key_map = tracked_keys_[cfh_id];
   auto iter = cf_key_map.find(key);
   if (iter == cf_key_map.end()) {
@@ -770,6 +868,14 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
       } else {
         iter->second.dependent_txn = dependent_id;
       }
+    }
+    if (is_nearby_key) {
+      assert(dependent_id == 0);
+      iter->second.is_nearby_key = true;
+    }
+    if (is_head_node) {
+      assert(dependent_id == 0);
+      iter->second.is_head_node = true;
     }
   }
 }

@@ -342,7 +342,8 @@ class IterKey {
         buf_size_(sizeof(space_)),
         key_(buf_),
         key_size_(0),
-        is_user_key_(true) {}
+        is_user_key_(true),
+        stored_seq(kMaxSequenceNumber) {}
 
   ~IterKey() { ResetBuffer(); }
 
@@ -494,6 +495,10 @@ class IterKey {
 
   bool IsUserKey() const { return is_user_key_; }
 
+  SequenceNumber GetSeq() const { return stored_seq; }
+
+  void SetStoredSeq(SequenceNumber s) { stored_seq = s; }
+
  private:
   char* buf_;
   size_t buf_size_;
@@ -501,6 +506,7 @@ class IterKey {
   size_t key_size_;
   char space_[32];  // Avoid allocation for short keys
   bool is_user_key_;
+  SequenceNumber stored_seq;
 
   Slice SetKeyImpl(const Slice& key, bool copy) {
     size_t size = key.size();

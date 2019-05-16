@@ -18,7 +18,7 @@ public:
   virtual ~DirtyBufferScanCallback() {}
 
   // Will be called when a write record is found when scaning the dirty buffer
-  virtual Status Invoke(const string &key, const string &value) = 0;
+  virtual Status Invoke(const string &key, const string &value, const uint64_t dep_txn_id) = 0;
 
   // Will be called when a delete record is found when scaning the dirty buffer
   virtual Status InvokeDeletion(const string &key) = 0;

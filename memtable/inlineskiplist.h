@@ -72,6 +72,7 @@ class InlineSkipList {
   // in the allocator must remain allocated for the lifetime of the
   // skiplist object.
   explicit InlineSkipList(Comparator cmp, Allocator* allocator,
+                          size_t head_key_size,
                           int32_t max_height = 12,
                           int32_t branching_factor = 4);
 
@@ -131,6 +132,11 @@ class InlineSkipList {
 
   // Validate correctness of the skip-list.
   void TEST_Validate() const;
+
+  void GetNearby(const char* key, void* callback_args,
+                 bool (*callback_func)(void* arg, const char* entry)) const;
+
+  char* GetHeadNode() const;
 
   // Iteration over the contents of a skip list
   class Iterator {
@@ -581,6 +587,7 @@ uint64_t InlineSkipList<Comparator>::EstimateCount(const char* key) const {
 template <class Comparator>
 InlineSkipList<Comparator>::InlineSkipList(const Comparator cmp,
                                            Allocator* allocator,
+                                           size_t head_key_size,
                                            int32_t max_height,
                                            int32_t branching_factor)
     : kMaxHeight_(static_cast<uint16_t>(max_height)),
@@ -588,7 +595,7 @@ InlineSkipList<Comparator>::InlineSkipList(const Comparator cmp,
       kScaledInverseBranching_((Random::kMaxNext + 1) / kBranching_),
       allocator_(allocator),
       compare_(cmp),
-      head_(AllocateNode(0, max_height)),
+      head_(AllocateNode(head_key_size, max_height)),
       max_height_(1),
       seq_splice_(AllocateSplice()) {
   assert(max_height > 0 && kMaxHeight_ == static_cast<uint32_t>(max_height));
@@ -960,6 +967,20 @@ void InlineSkipList<Comparator>::TEST_Validate() const {
   for (int i = 1; i < max_height; i++) {
     assert(nodes[i] != nullptr && nodes[i]->Next(i) == nullptr);
   }
+}
+
+template <class Comparator>
+void InlineSkipList<Comparator>::GetNearby(const char* key, void* callback_args,
+               bool (*callback_func)(void* arg, const char* entry)) const {
+  Node* node = FindLessThan(key);
+  while (callback_func(callback_args, node->Key())) {
+    node = FindLessThan(node->Key());
+  }
+}
+
+template <class Comparator>
+char* InlineSkipList<Comparator>::GetHeadNode() const {
+  return const_cast<char*>(head_->Key());
 }
 
 }  // namespace rocksdb
