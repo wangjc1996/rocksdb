@@ -312,7 +312,7 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
 
   std::string key_str = key.ToString();
 
-  DoTrackKey(cfh_id, key_str, seq, read_only, exclusive, true /* optimistic */, false /* nearby_key */, false /* head_node */, dependent_id);
+  DoTrackKey(cfh_id, key_str, seq, read_only, exclusive, true /* optimistic */, false /* nearby_key */, false /* head_node */, false /* skip_validation */, dependent_id);
 
   // Always return OK. Confilct checking will happen at commit time.
   return Status::OK();
@@ -515,15 +515,9 @@ Status TransactionBaseImpl::DoInsert(ColumnFamilyHandle *column_family, const Sl
     if (s.ok()) {
       uint32_t cfh_id = GetColumnFamilyID(column_family);
 
-      if (found_head_node) {
-        // add the head key to read set
-        DoTrackKey(cfh_id, nearby_key, seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/,
-                   true /*nearby_key*/, true /*head_node*/);
-      } else {
-        // add the nearby key to read set
-        DoTrackKey(cfh_id, nearby_key, seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/,
-                   true /*nearby_key*/);
-      }
+      // add the head key to read set, public write(IC3 write) should not validate nearby key
+      DoTrackKey(cfh_id, nearby_key, seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/,
+                 true /*nearby_key*/, found_head_node /*head_node*/, is_public_write /* skip_validation */);
     }
 
     if (debug_nearby_key != nullptr) {
@@ -552,7 +546,7 @@ void TransactionBaseImpl::TrackScanKey(ColumnFamilyHandle* column_family, const 
 
   // add the key to read set
   DoTrackKey(cfh_id, key.ToString(), seq, true /*read_only*/, false /*exclusive*/,
-             optimistic /*optimistic*/, false /* nearby_key */, false /* head_node */, dependent_id);
+             optimistic /*optimistic*/, false /* nearby_key */, false /* head_node */, false /* skip_validation */, dependent_id);
 }
 
 Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic, bool is_public_write) {
@@ -832,7 +826,7 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
                                    SequenceNumber seq, bool read_only,
                                    bool exclusive, bool optimistic,
                                    bool is_nearby_key, bool is_head_node,
-                                   TransactionID dependent_id) {
+                                   bool skip_validation, TransactionID dependent_id) {
   auto& cf_key_map = tracked_keys_[cfh_id];
   auto iter = cf_key_map.find(key);
   if (iter == cf_key_map.end()) {
@@ -869,14 +863,10 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
         iter->second.dependent_txn = dependent_id;
       }
     }
-    if (is_nearby_key) {
-      assert(dependent_id == 0);
-      iter->second.is_nearby_key = true;
-    }
-    if (is_head_node) {
-      assert(dependent_id == 0);
-      iter->second.is_head_node = true;
-    }
+    assert(dependent_id == 0);
+    iter->second.is_nearby_key = is_nearby_key;
+    iter->second.is_head_node = is_head_node;
+    iter->second.skip_validation = skip_validation;
   }
 }
 

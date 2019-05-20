@@ -3183,11 +3183,16 @@ Status DBImpl::GetNearbyInfo(ColumnFamilyHandle *column_family, const string &ke
   return s;
 }
 
-Status DBImpl::UpdateNearbyNodeSeq(uint32_t column_family_id, const LookupKey &lkey,
+Status DBImpl::UpdateNearbyNodeSeq(uint32_t column_family_id, const string& key,
                                    bool is_head_node) {
   Status s;
   SuperVersion* sv = GetAndRefSuperVersion(column_family_id);
 
+  SequenceNumber snapshot = last_seq_same_as_publish_seq_
+                            ? versions_->LastSequence()
+                            : versions_->LastPublishedSequence();
+
+  LookupKey lkey(key, snapshot);
   bool res = sv->mem->UpdateNodeSeq(lkey, is_head_node);
 
   if (!res) s = Status::Busy();

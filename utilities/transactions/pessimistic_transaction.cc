@@ -718,8 +718,7 @@ Status PessimisticTransaction::UpdateNearbySeqForInsert(DB* db) {
         // indicate it is a OCC read
         if (key_iter.second.is_nearby_key) {
           assert(key_iter.second.dependent_txn == 0);
-          LookupKey lkey(key, key_iter.second.seq);
-          status = db_impl->UpdateNearbyNodeSeq(cf_id, lkey, key.empty()/*head_node*/);
+          status = db_impl->UpdateNearbyNodeSeq(cf_id, key, key_iter.second.is_head_node/*head_node*/);
           if (!status.ok()) {
             break;
           }

@@ -193,6 +193,10 @@ Status TransactionUtil::CheckKeysForConflicts(PessimisticTransaction* txn,
 
       if ((key_state & 1) != 0) {
 
+        if (key_iter.second.skip_validation) {
+          continue;
+        }
+
         if (key_iter.second.is_dirty_read) {
           if (key_iter.second.dependent_txn == 0) {
             result = Status::Busy();

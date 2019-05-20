@@ -810,7 +810,7 @@ class DBImpl : public DB {
 
   Status GetNearbyInfo(ColumnFamilyHandle* column_family, const string& key, std::string* nearby_key, SequenceNumber* nearby_seq, bool* found_head_node);
 
-  Status UpdateNearbyNodeSeq(uint32_t column_family_id, const LookupKey& lkey, bool is_head_node);
+  Status UpdateNearbyNodeSeq(uint32_t column_family_id, const string& key, bool is_head_node);
 
  private:
   friend class DB;
