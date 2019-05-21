@@ -71,7 +71,7 @@ class TransactionLockMgr {
   // for calling UnLock() on this key.
   Status TryLock(PessimisticTransaction* txn, uint32_t column_family_id,
                  const std::string& key, Env* env, bool exclusive, bool fail_fast = false,
-                 volatile bool* callback = nullptr);
+                 std::atomic<bool>* callback = nullptr);
 
   // Check a key is locked or not
   // return Busy for locked, OK for unlocked

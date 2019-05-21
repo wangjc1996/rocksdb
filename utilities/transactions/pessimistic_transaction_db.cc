@@ -381,7 +381,7 @@ Status PessimisticTransactionDB::DoTryLock(PessimisticTransaction* txn,
                                          uint32_t cfh_id,
                                          const std::string& key,
                                          bool exclusive, bool fail_fast,
-                                         volatile bool* callback) {
+                                         std::atomic<bool>* callback) {
   return lock_mgr_.TryLock(txn, cfh_id, key, GetEnv(), exclusive, fail_fast, callback);
 }
 

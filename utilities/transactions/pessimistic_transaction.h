@@ -117,7 +117,7 @@ class PessimisticTransaction : public TransactionBaseImpl {
   std::string last_attempt_key() const { return last_attempt_; }
 
  protected:
-  Status DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false, volatile bool* callback = nullptr) override;
+  Status DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false, std::atomic<bool>* callback = nullptr) override;
   // Refer to
   // TransactionOptions::use_only_the_last_commit_time_batch_for_recovery
   bool use_only_the_last_commit_time_batch_for_recovery_ = false;

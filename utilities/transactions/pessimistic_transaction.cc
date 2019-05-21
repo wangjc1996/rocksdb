@@ -66,6 +66,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
   write_batch_.SetMaxBytes(txn_options.max_write_batch_size);
 
   lock_timeout_ = txn_options.lock_timeout * 1000;
+  //std::cout  << "Lock itmeout is " << lock_timeout_ << std::endl;
   if (lock_timeout_ < 0) {
     // Lock timeout not set, use default
     lock_timeout_ =
@@ -106,7 +107,7 @@ void PessimisticTransaction::Clear() {
 }
 
 
-Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool skip_validate, volatile bool* callback) {
+Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool skip_validate, std::atomic<bool>* callback) {
   std::string key_str = key.ToString();
   bool previously_locked;
   bool lock_upgrade = false;

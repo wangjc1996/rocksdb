@@ -278,7 +278,7 @@ Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
                                    uint32_t column_family_id,
                                    const std::string& key, Env* env,
                                    bool exclusive, bool fail_fast,
-                                   volatile bool* callback) {
+                                   std::atomic<bool>* callback) {
   (void)env;
   (void)fail_fast;
 
@@ -312,15 +312,18 @@ Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
     //end_time = start_time + timeout;
   //}
 
-  if (timeout < 0) {
+  if (true || timeout < 0) {
     // If timeout is negative, we wait indefinitely to acquire the lock
+      //std::cout << "Lock" << std::endl;
     result = stripe->stripe_mutex->Lock();
   } else {
+      //std::cout << "TryLockFor" << std::endl;
     result = stripe->stripe_mutex->TryLockFor(timeout);
   }
 
   if (!result.ok()) {
     // failed to acquire mutex
+      std::cout << "Timeout" << std::endl;
     return result;
   }
 

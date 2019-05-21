@@ -1,6 +1,7 @@
 #pragma once
 #ifndef ROCKSDB_LITE
 
+#include <iostream>
 #include <functional>
 
 #include "rocksdb/utilities/transaction.h"
@@ -46,15 +47,20 @@ struct LockEntry {
   LockType type;
   TransactionID tid;
   uint64_t expiration_time;
-  volatile bool* callback;
+  std::atomic<bool>* callback;
 
   LockEntry* next = nullptr;
   LockEntry* prev = nullptr;
 
-  void grant_lock() { *callback = true; }
+  void grant_lock() { 
+    //std::cout << "Granting lock to " << tid << std::endl;
+    callback->store(true, std::memory_order_seq_cst); 
+    //callback->store(true, std::memory_order_relaxed);
+
+  }
 
   LockEntry(TransactionID tid_, uint64_t time, bool ex,
-      volatile bool* callback_)
+      std::atomic<bool>* callback_)
     : type(ex ? lExclusive : lShared), tid(tid_), expiration_time(time),
       callback(callback_) {}
 };
@@ -69,7 +75,7 @@ struct LockList {
   
   bool nowaiters() { return waiters == nullptr; }
   bool grab(TransactionID id, bool exclusive, uint64_t new_expr_time,
-      volatile bool* callback);
+      std::atomic<bool>* callback);
   bool drop(TransactionID id, bool special = false);
   void fill_auto(autovector<TransactionID>* auto_);
 
