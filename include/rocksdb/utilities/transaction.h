@@ -485,11 +485,11 @@ class Transaction {
 
   virtual Status DoInsert(ColumnFamilyHandle *column_family, const Slice &key,
                           const Slice &value, bool optimistic = false,
-                          bool is_public_write = true, string *debug_nearby_key = nullptr) = 0;
+                          bool is_public_write = true) = 0;
 
   Status DoInsert(const Slice &key, const Slice &value, bool optimistic = false,
-                  bool is_public_write = true, string *debug_nearby_key = nullptr) {
-    return DoInsert(nullptr, key, value, optimistic, is_public_write, debug_nearby_key);
+                  bool is_public_write = true) {
+    return DoInsert(nullptr, key, value, optimistic, is_public_write);
   }
 
   virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, bool is_dirty_read = true) = 0;

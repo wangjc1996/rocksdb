@@ -462,7 +462,7 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
 
 Status TransactionBaseImpl::DoInsert(ColumnFamilyHandle *column_family, const Slice &key,
                                      const Slice &value, bool optimistic,
-                                     bool is_public_write, string *debug_nearby_key) {
+                                     bool is_public_write) {
   Status s;
 
   if (optimistic) {
@@ -515,13 +515,13 @@ Status TransactionBaseImpl::DoInsert(ColumnFamilyHandle *column_family, const Sl
     if (s.ok()) {
       uint32_t cfh_id = GetColumnFamilyID(column_family);
 
+      // skip_validation for nearby node cases:
+      // 1. public insert(IC3 write)
+      // 2. 2PL insert
+      bool skip_validation = (optimistic && is_public_write) || !optimistic;
       // add the head key to read set, public write(IC3 write) should not validate nearby key
       DoTrackKey(cfh_id, nearby_key, seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/,
-                 true /*nearby_key*/, found_head_node /*head_node*/, is_public_write /* skip_validation */);
-    }
-
-    if (debug_nearby_key != nullptr) {
-      *debug_nearby_key = nearby_key;
+                 true /*nearby_key*/, found_head_node /*head_node*/, skip_validation /* skip_validation */);
     }
   }
   return s;

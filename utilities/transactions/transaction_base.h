@@ -248,7 +248,7 @@ class TransactionBaseImpl : public Transaction {
 
   virtual Status DoInsert(ColumnFamilyHandle* column_family, const Slice &key,
                           const Slice &value, bool optimistic = false,
-                          bool is_public_write = true, string *debug_nearby_key = nullptr) override;
+                          bool is_public_write = true) override;
 
   virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false, bool is_public_write = true) override;
 
