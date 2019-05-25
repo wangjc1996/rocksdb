@@ -54,7 +54,7 @@ struct LockEntry {
 
   void grant_lock() { 
     //std::cout << "Granting lock to " << tid << std::endl;
-    callback->store(true, std::memory_order_seq_cst); 
+    callback->store(true, std::memory_order_release); 
     //callback->store(true, std::memory_order_relaxed);
 
   }

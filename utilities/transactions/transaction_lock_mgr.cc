@@ -323,7 +323,7 @@ Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
 
   if (!result.ok()) {
     // failed to acquire mutex
-      std::cout << "Timeout" << std::endl;
+      //std::cout << "Timeout" << std::endl;
     return result;
   }
 
@@ -338,7 +338,10 @@ Status TransactionLockMgr::TryLock(PessimisticTransaction* txn,
   }
   bool grabbed = lock_list->grab(txn->GetID(), exclusive,
           txn->GetExpirationTime(), callback);
-  if (!grabbed) result = Status::LockBusy();
+  if (!grabbed) {
+      callback->store(false, std::memory_order_release);
+      result = Status::LockBusy();
+  }
 
   stripe->stripe_mutex->UnLock();
   return result;
