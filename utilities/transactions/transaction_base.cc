@@ -519,9 +519,15 @@ Status TransactionBaseImpl::DoInsert(ColumnFamilyHandle *column_family, const Sl
       // 1. public insert(IC3 write)
       // 2. 2PL insert
       bool skip_validation = (optimistic && is_public_write) || !optimistic;
-      // add the head key to read set, public write(IC3 write) should not validate nearby key
+      // add the head key to read set, public write(IC3 write) & 2PL need not validate nearby key
       DoTrackKey(cfh_id, nearby_key, seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/,
                  true /*nearby_key*/, found_head_node /*head_node*/, skip_validation /* skip_validation */);
+
+      // 2pl insert, need to grab write lock for the nearby node's key
+      // fail_fast is meaningless, will not be used anyway -> transaction_lock_mgr.cc:AcquireWithTimeout
+      if (!optimistic) {
+        s = DoPessimisticLock(column_family, nearby_key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+      }
     }
   }
   return s;
@@ -544,9 +550,16 @@ void TransactionBaseImpl::TrackScanKey(ColumnFamilyHandle* column_family, const 
   if (column_family == nullptr) column_family = db_->DefaultColumnFamily();
   uint32_t cfh_id = GetColumnFamilyID(column_family);
 
-  // add the key to read set
-  DoTrackKey(cfh_id, key.ToString(), seq, true /*read_only*/, false /*exclusive*/,
-             optimistic /*optimistic*/, false /* nearby_key */, false /* head_node */, false /* skip_validation */, dependent_id);
+  if (optimistic) {
+    // OCC or OC3 protocol
+    // add the key to read set
+    DoTrackKey(cfh_id, key.ToString(), seq, true /*read_only*/, false /*exclusive*/,
+               optimistic /*optimistic*/, false /* nearby_key */, false /* head_node */, false /* skip_validation */, dependent_id);
+  } else {
+    // 2PL protocol
+    // fail_fast is meaningless, will not be used anyway -> transaction_lock_mgr.cc:AcquireWithTimeout
+    DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
+  }
 }
 
 Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic, bool is_public_write) {
