@@ -519,7 +519,7 @@ Status TransactionBaseImpl::DoInsert(ColumnFamilyHandle *column_family, const Sl
       // 1. public insert(IC3 write)
       // 2. 2PL insert
       bool skip_validation = (optimistic && is_public_write) || !optimistic;
-      // add the head key to read set, public write(IC3 write) & 2PL need not validate nearby key
+      // add the head key to read set, public write(IC3 write) & 2PL need not validate nearby key, but they have to add the node's seq + 1
       DoTrackKey(cfh_id, nearby_key, seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/,
                  true /*nearby_key*/, found_head_node /*head_node*/, skip_validation /* skip_validation */);
 
@@ -527,6 +527,9 @@ Status TransactionBaseImpl::DoInsert(ColumnFamilyHandle *column_family, const Sl
       // fail_fast is meaningless, will not be used anyway -> transaction_lock_mgr.cc:AcquireWithTimeout
       if (!optimistic) {
         s = DoPessimisticLock(column_family, nearby_key, false /* read_only */, true /* exclusive */, true /* fail_fast */);
+      } else {
+        // OCC & IC3 insert, need to add nearby node to write set to make it conflict with 2pl range query (prevent phantom read)
+        s = DoOptimisticLock(column_family, nearby_key, false /* read_only */, true /* exclusive */);
       }
     }
   }
