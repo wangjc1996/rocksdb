@@ -60,6 +60,16 @@ class OptimisticTransaction : public TransactionBaseImpl {
     return Status::OK();
   }
 
+  Status DoPessimisticLockForPiece(uint32_t cfh_id, const Slice& key,
+                           bool read_only, bool exclusive) override {
+    (void)cfh_id;
+    (void)key;
+    (void)read_only;
+    (void)exclusive;
+
+    return Status::OK();
+  }
+
   Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
                  bool read_only, bool exclusive,
                  bool untracked = false) override;

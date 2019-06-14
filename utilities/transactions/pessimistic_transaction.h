@@ -119,6 +119,9 @@ class PessimisticTransaction : public TransactionBaseImpl {
 
  protected:
   Status DoPessimisticLock(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false) override;
+
+  Status DoPessimisticLockForPiece(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive) override;
+
   // Refer to
   // TransactionOptions::use_only_the_last_commit_time_batch_for_recovery
   bool use_only_the_last_commit_time_batch_for_recovery_ = false;

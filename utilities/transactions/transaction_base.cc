@@ -319,7 +319,7 @@ Status TransactionBaseImpl::DoOptimisticLock(ColumnFamilyHandle* column_family, 
 }
 
 Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyHandle* column_family,
-		const Slice& key, std::string* value, bool optimistic, bool is_dirty_read) {
+		const Slice& key, std::string* value, bool optimistic, bool is_dirty_read, bool get_for_update) {
   assert(value != nullptr);
   PinnableSlice pinnable_val(value);
   assert(!pinnable_val.IsPinned());
@@ -340,6 +340,12 @@ Status TransactionBaseImpl::DoGet(const ReadOptions& read_options, ColumnFamilyH
     // First find in local batch
     s = write_batch_.GetFromBatch(column_family, dbimpl_->initial_db_options_, key, buffer_value);
     if (s.ok()) {
+      return s;
+    }
+
+    // piece atomic using 2pl
+    s = DoPessimisticLockForPiece(column_family, key, true /* read_only */, get_for_update /* exclusive */);
+    if (!s.ok()) {
       return s;
     }
 
@@ -438,6 +444,13 @@ Status TransactionBaseImpl::DoPut(ColumnFamilyHandle* column_family,
     }
 
     if (optimistic && is_public_write) {
+
+      // piece atomic using 2pl
+      s = DoPessimisticLockForPiece(column_family, key, false /* read_only */, true /* exclusive */);
+      if (!s.ok()) {
+        return s;
+      }
+
       // put a uncommitted version into dirty buffer & track w-w, anti-dependencies
       DirtyWriteBufferContext context{};
       s = dbimpl_->WriteDirtyPut(column_family, key.ToString(), value.ToString(), seq, GetID(), &context);
@@ -485,6 +498,13 @@ Status TransactionBaseImpl::DoInsert(ColumnFamilyHandle *column_family, const Sl
     }
 
     if (optimistic && is_public_write) {
+
+      // piece atomic using 2pl
+      s = DoPessimisticLockForPiece(column_family, key, false /* read_only */, true /* exclusive */);
+      if (!s.ok()) {
+        return s;
+      }
+
       // put a uncommitted version into dirty buffer & track w-w, anti-dependencies
       DirtyWriteBufferContext context{};
       s = dbimpl_->WriteDirtyPut(column_family, key.ToString(), value.ToString(), seq, GetID(), &context);
@@ -514,6 +534,12 @@ Status TransactionBaseImpl::DoInsert(ColumnFamilyHandle *column_family, const Sl
     // if nearby node exist. add the nearby node to read set
     if (s.ok()) {
       uint32_t cfh_id = GetColumnFamilyID(column_family);
+
+      // write lock on the nearby node to conflict with range query
+      s = DoPessimisticLockForPiece(cfh_id, nearby_key, false /* read_only */, true /* exclusive */);
+      if (!s.ok()) {
+        return s;
+      }
 
       // skip_validation for nearby node cases:
       // 1. public insert(IC3 write)
@@ -549,9 +575,14 @@ void TransactionBaseImpl::TrackHeadNode(ColumnFamilyHandle* column_family) {
   DoTrackKey(column_family_id, head.ToString(), seq, true /*read_only*/ , false /*exclusive*/, true /*optimistic*/, false /*nearby_key*/, true /*head_node*/);
 }
 
-void TransactionBaseImpl::TrackScanKey(ColumnFamilyHandle* column_family, const Slice& key, const SequenceNumber seq, bool optimistic, TransactionID dependent_id) {
+void TransactionBaseImpl::TrackScanKey(ColumnFamilyHandle* column_family, const Slice& key, const SequenceNumber seq, bool optimistic, bool is_dirty_read, bool get_for_update, TransactionID dependent_id) {
   if (column_family == nullptr) column_family = db_->DefaultColumnFamily();
   uint32_t cfh_id = GetColumnFamilyID(column_family);
+
+  if (optimistic && is_dirty_read) {
+    // piece atomic using 2pl
+    DoPessimisticLockForPiece(cfh_id, key, true /* read_only */, get_for_update /* exclusive */);
+  }
 
   if (optimistic) {
     // OCC or OC3 protocol
@@ -561,7 +592,7 @@ void TransactionBaseImpl::TrackScanKey(ColumnFamilyHandle* column_family, const 
   } else {
     // 2PL protocol
     // fail_fast is meaningless, will not be used anyway -> transaction_lock_mgr.cc:AcquireWithTimeout
-    DoPessimisticLock(column_family, key, true /* read_only */, false /* exclusive */, true /* fail_fast */);
+    DoPessimisticLock(column_family, key, true /* read_only */, get_for_update /* exclusive */, true /* fail_fast */);
   }
 }
 
@@ -588,6 +619,13 @@ Status TransactionBaseImpl::DoDelete(ColumnFamilyHandle* column_family, const Sl
     }
 
     if (optimistic && is_public_write) {
+
+      // piece atomic using 2pl
+      s = DoPessimisticLockForPiece(column_family, key, false /* read_only */, true /* exclusive */);
+      if (!s.ok()) {
+        return s;
+      }
+
       // put a uncommitted version into dirty buffer & track w-w, anti-dependencies
       DirtyWriteBufferContext context{};
       s = dbimpl_->WriteDirtyDelete(column_family, key.ToString(), seq, GetID(), &context);
@@ -884,6 +922,35 @@ void TransactionBaseImpl::DoTrackKey(uint32_t cfh_id, const std::string& key,
     iter->second.is_head_node = is_head_node;
     iter->second.skip_validation = skip_validation;
   }
+}
+
+void TransactionBaseImpl::DoTrackKeyForPiece(uint32_t cfh_id, const std::string& key,
+                                     SequenceNumber seq, bool read_only,
+                                     bool exclusive, bool optimistic) {
+  auto& cf_key_map = piece_tracked_keys_[cfh_id];
+  auto iter = cf_key_map.find(key);
+  if (iter == cf_key_map.end()) {
+    auto result = cf_key_map.insert({key, TransactionKeyMapInfo(seq)});
+    iter = result.first;
+  } else if (seq < iter->second.seq) {
+    // Now tracking this key with an earlier sequence number
+    iter->second.seq = seq;
+  }
+  // else we do not update the seq. The smaller the tracked seq, the stronger it
+  // the guarantee since it implies from the seq onward there has not been a
+  // concurrent update to the key. So we update the seq if it implies stronger
+  // guarantees, i.e., if it is smaller than the existing trakced seq.
+
+  if (read_only) {
+    iter->second.num_reads++;
+    if (optimistic) iter->second.key_state |= 1; // occ read
+    else iter->second.key_state |= 4; 		 // 2pl read
+  } else {
+    iter->second.num_writes++;
+    if (optimistic) iter->second.key_state |= 2; // occ write
+    else iter->second.key_state |= 4; 		 // 2pl write
+  }
+  iter->second.exclusive |= exclusive;
 }
 
 void TransactionBaseImpl::TrackKey(uint32_t cfh_id, const std::string& key,

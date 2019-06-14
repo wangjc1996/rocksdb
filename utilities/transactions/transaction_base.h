@@ -226,6 +226,10 @@ class TransactionBaseImpl : public Transaction {
   // with writes in other transactions.
   const TransactionKeyMap& GetTrackedKeys() const { return tracked_keys_; }
 
+  const TransactionKeyMap& GetPieceTrackedKeys() const { return piece_tracked_keys_; }
+
+  void ClearPieceTrackedKeys() { piece_tracked_keys_.clear(); }
+
   // Get list of keys in this transaction that already locked
 
   WriteOptions* GetWriteOptions() override { return &write_options_; }
@@ -252,16 +256,18 @@ class TransactionBaseImpl : public Transaction {
 
   virtual Status DoDelete(ColumnFamilyHandle* column_family, const Slice& key, bool optimistic = false, bool is_public_write = true) override;
 
-  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, bool is_dirty_read = true) override;
+  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, bool is_dirty_read = true, bool get_for_update = false) override;
 
   virtual Status DoScanDirty(const ReadOptions& options, ColumnFamilyHandle* column_family, DirtyBufferScanCallback* callback) override;
 
   virtual void TrackHeadNode(ColumnFamilyHandle* column_family) override;
 
-  virtual void TrackScanKey(ColumnFamilyHandle* column_family, const Slice& key, const SequenceNumber seq, bool optimistic = true, TransactionID dependent_id = 0) override;
+  virtual void TrackScanKey(ColumnFamilyHandle* column_family, const Slice& key, const SequenceNumber seq, bool optimistic = true, bool is_dirty_read = false, bool get_for_update = false, TransactionID dependent_id = 0) override;
 
   protected:
   void DoTrackKey(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive, bool optimistic = false, bool is_nearby_key = false, bool is_head_node = false, bool skip_validation = false, TransactionID dependent_id = 0);
+
+  void DoTrackKeyForPiece(uint32_t cfh_id, const std::string& key, SequenceNumber seq, bool read_only, bool exclusive, bool optimistic = false);
 
   Status DoOptimisticLock(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive, TransactionID dependent_id = 0, bool untracked = false);
 
@@ -270,6 +276,15 @@ class TransactionBaseImpl : public Transaction {
 }
 
   virtual Status DoPessimisticLock(uint32_t cf_id, const Slice& key, bool read_only, bool exclusive, bool fail_fast, bool untracked = false) = 0;
+
+  // for IC3 piece atomic
+  Status DoPessimisticLockForPiece(ColumnFamilyHandle* column_family, const Slice& key, bool read_only, bool exclusive) {
+    return DoPessimisticLockForPiece(GetColumnFamilyID(column_family), key, read_only, exclusive);
+  }
+
+  virtual Status DoPessimisticLockForPiece(uint32_t cf_id, const Slice& key, bool read_only, bool exclusive) = 0;
+
+
   // Add a key to the list of tracked keys.
   //
   // seqno is the earliest seqno this key was involved with this transaction.
@@ -359,6 +374,8 @@ class TransactionBaseImpl : public Transaction {
   // For Pessimistic Transactions this is the list of locked keys.
   // Optimistic Transactions will wait till commit time to do conflict checking.
   TransactionKeyMap tracked_keys_;
+
+  TransactionKeyMap piece_tracked_keys_;
 
   // If true, future Put/Merge/Deletes will be indexed in the
   // WriteBatchWithIndex.

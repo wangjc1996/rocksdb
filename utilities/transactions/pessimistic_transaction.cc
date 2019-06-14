@@ -174,6 +174,75 @@ Status PessimisticTransaction::DoPessimisticLock(uint32_t cfh_id, const Slice& k
   return s;
 }
 
+Status PessimisticTransaction::DoPessimisticLockForPiece(uint32_t cfh_id, const Slice& key, bool read_only, bool exclusive) {
+  std::string key_str = key.ToString();
+  bool previously_locked;
+  bool lock_upgrade = false;
+  Status s;
+
+  // lock this key if this transactions hasn't already locked it
+  SequenceNumber tracked_at_seq = kMaxSequenceNumber;
+
+  const auto& tracked_keys = GetPieceTrackedKeys();
+  const auto tracked_keys_cf = tracked_keys.find(cfh_id);
+  if (tracked_keys_cf == tracked_keys.end()) {
+    previously_locked = false;
+  } else {
+    auto iter = tracked_keys_cf->second.find(key_str);
+    if (iter == tracked_keys_cf->second.end()) {
+      previously_locked = false;
+    } else {
+      auto& info = iter->second;
+      previously_locked = (info.key_state & 4) != 0;
+      if (previously_locked && !info.exclusive && exclusive) {
+        lock_upgrade = true;
+      }
+      tracked_at_seq = iter->second.seq;
+    }
+  }
+
+  // Lock this key if this transactions hasn't already locked it or we require
+  // an upgrade.
+  if (!previously_locked || lock_upgrade) {
+    s = txn_db_impl_->DoTryLock(this, cfh_id, key_str, exclusive, false /* optimistic */);
+  }
+
+  SetSnapshotIfNeeded();
+
+  // Even though we do not care about doing conflict checking for this write,
+  // we still need to take a lock to make sure we do not cause a conflict with
+  // some other write.  However, we do not need to check if there have been
+  // any writes since this transaction's snapshot.
+  // TODO(agiardullo): could optimize by supporting shared txn locks in the
+  // future
+  if (snapshot_ == nullptr) {
+    // Need to remember the earliest sequence number that we know that this
+    // key has not been modified after.  This is useful if this same
+    // transaction
+    // later tries to lock this key again.
+    if (tracked_at_seq == kMaxSequenceNumber) {
+      // Since we haven't checked a snapshot, we only know this key has not
+      // been modified since after we locked it.
+      // Note: when last_seq_same_as_publish_seq_==false this is less than the
+      // latest allocated seq but it is ok since i) this is just a heuristic
+      // used only as a hint to avoid actual check for conflicts, ii) this would
+      // cause a false positive only if the snapthot is taken right after the
+      // lock, which would be an unusual sequence.
+      tracked_at_seq = db_->GetLatestSequenceNumber();
+    }
+  }
+
+  if (s.ok()) { // fail_fast indicates it's via real tpl
+    // We must track all the locked keys so that we can unlock them later. If
+    // the key is already locked, this func will update some stats on the
+    // tracked key. It could also update the tracked_at_seq if it is lower than
+    // the existing trackey seq.
+    DoTrackKeyForPiece(cfh_id, key_str, tracked_at_seq, read_only, exclusive, false /* optimistic */);
+  }
+
+  return s;
+}
+
 void PessimisticTransaction::Reinitialize(
     TransactionDB* txn_db, const WriteOptions& write_options,
     const TransactionOptions& txn_options) {
@@ -864,6 +933,8 @@ Status PessimisticTransaction::ReleaseDirty() {
 }
 
 void PessimisticTransaction::SetTxnPieceIdx(unsigned int idx) {
+  txn_db_impl_->UnLock(this, &GetPieceTrackedKeys());
+  ClearPieceTrackedKeys();
   metaData->current_piece_idx.store(idx);
 }
 

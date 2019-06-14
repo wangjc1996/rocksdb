@@ -492,7 +492,7 @@ class Transaction {
     return DoInsert(nullptr, key, value, optimistic, is_public_write);
   }
 
-  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, bool is_dirty_read = true) = 0;
+  virtual Status DoGet(const ReadOptions& options, ColumnFamilyHandle* column_family, const Slice& key, std::string* value, bool optimistic = false, bool is_dirty_read = true, bool get_for_update = false) = 0;
 
   Status DoGet(const ReadOptions& options, const Slice& key,
                      std::string* value, bool optimistic = false) {
@@ -513,7 +513,7 @@ class Transaction {
     TrackHeadNode(nullptr);
   }
 
-  virtual void TrackScanKey(ColumnFamilyHandle* column_family, const Slice& key, const SequenceNumber seq, bool optimistic = true, TransactionID dependent_id = 0) = 0;
+  virtual void TrackScanKey(ColumnFamilyHandle* column_family, const Slice& key, const SequenceNumber seq, bool optimistic = true, bool is_dirty_read = false, bool get_for_update = false, TransactionID dependent_id = 0) = 0;
 
   void TrackScanKey(const Slice& key, const SequenceNumber seq, bool optimistic = true) {
     TrackScanKey(nullptr, key, seq, optimistic);
