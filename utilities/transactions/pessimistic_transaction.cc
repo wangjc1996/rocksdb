@@ -477,17 +477,17 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
 
   if (!s.ok()) return s;
 
-  s = DoLockAll();
+//  s = DoLockAll();
+//
+//  if (!s.ok()) return s;
+//
+//  PessimisticTransactionCallback callback(this);
 
-  if (!s.ok()) return s;
-
-  PessimisticTransactionCallback callback(this);
-
-  //   s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
-  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
-
-  s = db_impl->WriteWithCallback(
-     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
+     s = db_->Write(write_options_, GetWriteBatch()->GetWriteBatch());
+//  DBImpl* db_impl = static_cast_with_check<DBImpl, DB>(db_->GetRootDB());
+//
+//  s = db_impl->WriteWithCallback(
+//     write_options_, GetWriteBatch()->GetWriteBatch(), &callback);
   return s;
 }
 
@@ -899,8 +899,8 @@ Status PessimisticTransaction::CheckTransactionState(TxnMetaData* metadata, int6
     return Status::Aborted();
   } else if (conflict_piece != UINT_MAX && metadata->current_piece_idx >= conflict_piece) {
     return Status::OK();
-  }  else if (used_period > 15000) { // 15K microseconds
-//    printf("Alert Timeout - self type %d(current piece %d) dep on type %d(current piece %d) \n", metaData->txn_type, metaData->current_piece_idx.load(), metadata->txn_type, metadata->current_piece_idx.load());
+  }  else if (used_period > 5000000) { // 15K microseconds
+    printf("Alert Timeout - self type %d(current piece %d) dep on type %d(current piece %d) \n", metaData->txn_type, metaData->current_piece_idx.load(), metadata->txn_type, metadata->current_piece_idx.load());
     return Status::TimedOut();
   }
   return Status::Incomplete();
