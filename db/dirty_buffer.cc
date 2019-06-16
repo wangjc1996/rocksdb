@@ -44,13 +44,27 @@ namespace rocksdb {
 
     // scan dependency ids
     {
-      ::lock_guard<mutex> scan_list_guard(scan_list_mutex);
-      for (auto it = scan_list.begin(); it != scan_list.end(); ++it) {
-        // most recent scan id is at the end of the vector
-        if (*it != txn_id) context->read_txn_ids.emplace_back(*it);
-        else break;
+      ReadLock rl_scan_list(&scan_list_mutex);
+
+      const Comparator *comparator = BytewiseComparator();
+
+      for (auto info : scan_list) {
+        if (info->txn_id_ == txn_id) {
+          continue;
+        } else {
+          // check key whether in that range or not
+          Slice target(key);
+          if (comparator->Compare(target, info->iterate_lower_bound_) < 0
+              || comparator->Compare(target, info->iterate_upper_bound_) >= 0) {
+            continue;
+          } else {
+            // key is in that range, build dependency
+            context->read_txn_ids.emplace_back(info->txn_id_);
+          }
+        }
       }
     }
+
     //get other dependency ids
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
@@ -95,13 +109,27 @@ namespace rocksdb {
 
     // scan dependency ids
     {
-      ::lock_guard<mutex> scan_list_guard(scan_list_mutex);
-      for (auto it = scan_list.begin(); it != scan_list.end(); ++it) {
-        // most recent scan id is at the end of the vector
-        if (*it != txn_id) context->read_txn_ids.emplace_back(*it);
-        else break;
+      ReadLock rl_scan_list(&scan_list_mutex);
+
+      const Comparator *comparator = BytewiseComparator();
+
+      for (auto info : scan_list) {
+        if (info->txn_id_ == txn_id) {
+          continue;
+        } else {
+          // check key whether in that range or not
+          Slice target(key);
+          if (comparator->Compare(target, info->iterate_lower_bound_) < 0
+              || comparator->Compare(target, info->iterate_upper_bound_) >= 0) {
+            continue;
+          } else {
+            // key is in that range, build dependency
+            context->read_txn_ids.emplace_back(info->txn_id_);
+          }
+        }
       }
     }
+
     //get other dependency ids
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
@@ -190,10 +218,9 @@ namespace rocksdb {
     {
       // add range query operation to the access list
       assert(context->self_txn_id > 0 && context->self_txn_id != ULONG_MAX);
-      lock_guard<mutex> scan_list_guard(scan_list_mutex);
-      if(std::find(scan_list.begin(), scan_list.end(), context->self_txn_id) == scan_list.end()) {
-        scan_list.emplace_back(context->self_txn_id);
-      }
+      WriteLock wl_scan_list(&scan_list_mutex);
+      auto *scanInfo = new ScanInfo(context->self_txn_id, read_options);
+      scan_list.emplace_back(scanInfo);
     }
 
     const Comparator *comparator = BytewiseComparator();
@@ -284,10 +311,15 @@ namespace rocksdb {
   Status DirtyBuffer::RemoveScanInfo(TransactionID txn_id) {
     {
       assert(txn_id > 0 && txn_id != ULONG_MAX);
-      lock_guard<mutex> scan_list_guard(scan_list_mutex);
-      auto it = std::find(scan_list.begin(), scan_list.end(), txn_id);
-      if(it != scan_list.end()) {
-        scan_list.erase(it);
+      WriteLock wl_scan_list(&scan_list_mutex);
+      for (auto it = scan_list.begin(); it != scan_list.end();) {
+        ScanInfo* info = *it;
+        if (info->txn_id_ == txn_id) {
+          scan_list.erase(it);
+          delete info;
+        } else {
+          ++it;
+        }
       }
     }
     return Status::OK();
@@ -338,6 +370,16 @@ namespace rocksdb {
   }
 
   WriteInfo::~WriteInfo() {
+
+  }
+
+  ScanInfo::ScanInfo(TransactionID txn_id, const ReadOptions &read_options)
+      : txn_id_(txn_id),
+        iterate_lower_bound_(read_options.iterate_lower_bound->ToString()),
+        iterate_upper_bound_(read_options.iterate_upper_bound->ToString()) {
+  }
+
+  ScanInfo::~ScanInfo() {
 
   }
 

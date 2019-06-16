@@ -24,6 +24,7 @@ namespace rocksdb {
 class RWMutex;
 class DirtyVersion;
 class WriteInfo;
+class ScanInfo;
 
 typedef uint64_t SequenceNumber;
 using TransactionID = uint64_t;
@@ -85,9 +86,9 @@ class DirtyBuffer {
   port::RWMutex buffer_mutex;
 
   // protect the read write of the scan_list
-  mutex scan_list_mutex;
+  port::RWMutex scan_list_mutex;
   // record the txn ids which have perform the dirty buffer scan
-  std::vector<TransactionID> scan_list;
+  std::vector<ScanInfo*> scan_list;
 
   int GetPosition(const string &key);
   mutex* GetLock(int pos);
@@ -154,6 +155,30 @@ private:
   // No copying allowed
   WriteInfo(const WriteInfo&);
   WriteInfo& operator=(const WriteInfo&);
+
+};
+
+class ScanInfo {
+public:
+
+  // normal write operation
+  explicit ScanInfo(TransactionID txn_id, const ReadOptions& read_options);
+
+  ~ScanInfo();
+
+private:
+
+  friend class DirtyBuffer;
+  friend class DirtyVersion;
+
+  TransactionID txn_id_;
+
+  string iterate_lower_bound_;
+  string iterate_upper_bound_;
+
+  // No copying allowed
+  ScanInfo(const ScanInfo&);
+  ScanInfo& operator=(const ScanInfo&);
 
 };
 
