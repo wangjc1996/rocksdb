@@ -808,6 +808,10 @@ class DBImpl : public DB {
 
   Status RemoveScanDirty(uint32_t column_family_id, TransactionID txn_id);
 
+  Status MakeDirtyVisible(uint32_t column_family_id, const string& key, TransactionID txn_id);
+
+  Status MakeDirtyScanVisible(uint32_t column_family_id, TransactionID txn_id);
+
   Status GetNearbyInfo(ColumnFamilyHandle* column_family, const string& key, std::string* nearby_key, SequenceNumber* nearby_seq, bool* found_head_node);
 
   Status UpdateNearbyNodeSeq(uint32_t column_family_id, const string& key, bool is_head_node);

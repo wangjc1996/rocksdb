@@ -1531,4 +1531,16 @@ Status DBImpl::RemoveScanDirty(uint32_t column_family_id, TransactionID txn_id) 
   return dirty_buffer->RemoveScanInfo(txn_id);
 }
 
+Status DBImpl::MakeDirtyVisible(uint32_t column_family_id, const string& key, TransactionID txn_id) {
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(column_family_id);
+  auto* dirty_buffer = cfd->dirty_buffer();
+  return dirty_buffer->MakeOperationVisible(key, txn_id);
+}
+
+Status DBImpl::MakeDirtyScanVisible(uint32_t column_family_id, TransactionID txn_id) {
+  auto* cfd = versions_->GetColumnFamilySet()->GetColumnFamily(column_family_id);
+  auto* dirty_buffer = cfd->dirty_buffer();
+  return dirty_buffer->MakeScanOperationVisible(txn_id);
+}
+
 }  // namespace rocksdb

@@ -49,7 +49,7 @@ namespace rocksdb {
       const Comparator *comparator = BytewiseComparator();
 
       for (auto info : scan_list) {
-        if (info->txn_id_ == txn_id) {
+        if (info->skip || info->txn_id_ == txn_id) {
           continue;
         } else {
           // check key whether in that range or not
@@ -68,7 +68,7 @@ namespace rocksdb {
     //get other dependency ids
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
-      if (key.compare(dirty->key_) != 0 || dirty->txn_id_ == txn_id) {
+      if (dirty->skip || key.compare(dirty->key_) != 0 || dirty->txn_id_ == txn_id) {
         dirty = dirty->link_older;
         continue;
       }
@@ -114,7 +114,7 @@ namespace rocksdb {
       const Comparator *comparator = BytewiseComparator();
 
       for (auto info : scan_list) {
-        if (info->txn_id_ == txn_id) {
+        if (info->skip || info->txn_id_ == txn_id) {
           continue;
         } else {
           // check key whether in that range or not
@@ -133,7 +133,7 @@ namespace rocksdb {
     //get other dependency ids
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
-      if (key.compare(dirty->key_) != 0 || dirty->txn_id_ == txn_id) {
+      if (dirty->skip || key.compare(dirty->key_) != 0 || dirty->txn_id_ == txn_id) {
         dirty = dirty->link_older;
         continue;
       }
@@ -186,7 +186,7 @@ namespace rocksdb {
     // search dirty version in buffer
     auto *dirty = dirty_array_[position];
     while (dirty != nullptr) {
-      if (key.compare(dirty->key_) != 0 || !dirty->is_write) {
+      if (dirty->skip || key.compare(dirty->key_) != 0 || !dirty->is_write) {
         dirty = dirty->link_older;
         continue;
       }
@@ -229,7 +229,7 @@ namespace rocksdb {
       // search dirty version in buffer
       auto *dirty = dirty_array_[position];
       while (dirty != nullptr) {
-        if (!dirty->is_write) {
+        if (dirty->skip || !dirty->is_write) {
           dirty = dirty->link_older;
           continue;
         }
@@ -319,6 +319,39 @@ namespace rocksdb {
           delete info;
         } else {
           ++it;
+        }
+      }
+    }
+    return Status::OK();
+  }
+
+  Status DirtyBuffer::MakeOperationVisible(const string &key, TransactionID txn_id) {
+
+    // not exclusive on the whole buffer
+    ReadLock rl(&buffer_mutex);
+
+    int position = GetPosition(key);
+    lock_guard<mutex> lock_guard(*GetLock(position));
+    auto *dirty = dirty_array_[position];
+    while (dirty != nullptr) {
+      TransactionID stored_txn_id = dirty->txn_id_;
+      if (stored_txn_id != txn_id) {
+        dirty = dirty->link_older;
+        continue;
+      }
+      dirty->skip = false;
+      dirty = dirty->link_older;
+    }
+    return Status::OK();
+  }
+
+  Status DirtyBuffer::MakeScanOperationVisible(TransactionID txn_id) {
+    {
+      assert(txn_id > 0 && txn_id != ULONG_MAX);
+      WriteLock wl_scan_list(&scan_list_mutex);
+      for (auto info : scan_list) {
+        if (info->txn_id_ == txn_id) {
+          info->skip = false;
         }
       }
     }

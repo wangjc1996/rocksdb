@@ -399,6 +399,10 @@ Status TransactionBaseImpl::DoScanDirty(const ReadOptions &options, ColumnFamily
   if (column_family != nullptr) {
     cfd = column_family->GetID();
   }
+
+  has_range_query_piece = true;
+  cfd_for_piece = cfd;
+
   if(std::find(scan_column_family_ids.begin(), scan_column_family_ids.end(), cfd) == scan_column_family_ids.end()) {
     scan_column_family_ids.emplace_back(cfd);
   }

@@ -934,6 +934,24 @@ Status PessimisticTransaction::ReleaseDirty() {
 
 void PessimisticTransaction::SetTxnPieceIdx(unsigned int idx) {
   txn_db_impl_->UnLock(this, &GetPieceTrackedKeys());
+
+  const TransactionKeyMap& key_map = GetPieceTrackedKeys();
+  // make scan info visible
+  if (has_range_query_piece) {
+    dbimpl_->MakeDirtyScanVisible(cfd_for_piece, GetID());
+    has_range_query_piece = false;
+  }
+
+  // make read & write info visible
+  for (auto& key_map_iter : key_map) {
+    uint32_t cf = key_map_iter.first;
+
+    const auto& keys = key_map_iter.second;
+    for (auto& key_iter : keys) {
+      const auto& key = key_iter.first;
+      dbimpl_->MakeDirtyVisible(cf, key, GetID());
+    }
+  }
   ClearPieceTrackedKeys();
   metaData->current_piece_idx.store(idx);
 }

@@ -75,6 +75,10 @@ class DirtyBuffer {
 
   Status RemoveScanInfo(TransactionID txn_id);
 
+  Status MakeOperationVisible(const string& key, TransactionID txn_id);
+
+  Status MakeScanOperationVisible(TransactionID txn_id);
+
  private:
   uint32_t column_family_id_;
   std::vector<mutex> locks_;
@@ -126,6 +130,8 @@ class DirtyVersion {
   DirtyVersion* link_older = nullptr;
   DirtyVersion* link_newer = nullptr;
 
+  bool skip = true;
+
   // No copying allowed
   DirtyVersion(const DirtyVersion&);
   DirtyVersion& operator=(const DirtyVersion&);
@@ -175,6 +181,7 @@ private:
 
   string iterate_lower_bound_;
   string iterate_upper_bound_;
+  bool skip = true;
 
   // No copying allowed
   ScanInfo(const ScanInfo&);

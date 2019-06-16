@@ -359,6 +359,9 @@ class TransactionBaseImpl : public Transaction {
   // Records writes pending in this transaction
   WriteBatchWithIndex write_batch_;
 
+  bool has_range_query_piece = false;
+  uint32_t cfd_for_piece;
+
  private:
   friend class WritePreparedTxn;
   // Extra data to be persisted with the commit. Note this is only used when
