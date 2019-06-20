@@ -91,6 +91,7 @@ void PessimisticTransaction::Initialize(const TransactionOptions& txn_options) {
 
 PessimisticTransaction::~PessimisticTransaction() {
   txn_db_impl_->UnLock(this, &GetTrackedKeys());
+  txn_db_impl_->UnLock(this, &GetPieceTrackedKeys());
   if (expiration_time_ > 0) {
     txn_db_impl_->RemoveExpirableTransaction(txn_id_);
   }
@@ -548,6 +549,7 @@ Status PessimisticTransaction::Rollback() {
     }
     // prepare couldn't have taken place
     txn_db_impl_->UnLock(this, &GetTrackedKeys());
+    txn_db_impl_->UnLock(this, &GetPieceTrackedKeys());
     ReleaseDirty();
     Clear();
     txn_state_.store(ROLLEDBACK);
